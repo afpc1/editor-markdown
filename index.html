@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ftnMDReader — a folder of markdown</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+</head>
+<body>
+
+  <div id="app">
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">§</span>
+        <span class="brand-name">ftnMDReader</span>
+      </div>
+
+      <div class="topbar-folder" id="folderLabel">No folder open</div>
+
+      <div class="topbar-actions">
+        <button class="btn btn-icon" id="toggleSidebarBtn" title="Show/hide the file list">☰</button>
+        <button class="btn" id="openFolderBtn" title="Open a folder from your computer">Open folder</button>
+        <button class="btn btn-quiet" id="newFileBtn" disabled title="Create a new markdown file">New file</button>
+        <button class="btn btn-quiet" id="newFolderBtn" disabled title="Create a new subfolder">New folder</button>
+      </div>
+    </header>
+
+    <div id="reconnectBanner" class="reconnect-banner" hidden>
+      <span>Reconnect to <strong id="reconnectName"></strong>, the folder you had open last time?</span>
+      <div class="reconnect-actions">
+        <button class="btn" id="reconnectBtn">Reconnect</button>
+        <button class="btn btn-quiet" id="reconnectDismiss">Dismiss</button>
+      </div>
+    </div>
+
+    <div class="workspace" id="workspace">
+
+      <!-- Sidebar: file list -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head" id="sidebarHead">
+          <span>Files</span>
+          <span class="file-count" id="fileCount"></span>
+        </div>
+
+        <div class="search-box">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="searchInput" placeholder="Search files…" autocomplete="off">
+          <button class="search-clear" id="searchClear" hidden title="Clear search">✕</button>
+        </div>
+        <label class="search-content-toggle">
+          <input type="checkbox" id="searchContentToggle">
+          <span>Also search inside files</span>
+        </label>
+
+        <ul class="file-list" id="fileList">
+          <li class="empty-hint">
+            Open a folder to see its markdown files here.
+          </li>
+        </ul>
+      </aside>
+
+      <div class="sidebar-resizer" id="sidebarResizer"></div>
+
+      <!-- Main editor area -->
+      <main class="editor-area">
+
+        <div class="empty-state" id="emptyState">
+          <p class="empty-state-glyph">§</p>
+          <h1>A folder of markdown, open and editable</h1>
+          <p>ftnMDReader reads a folder on your computer, right in the browser. Nothing is uploaded anywhere — files
+             are only ever read and written on your own machine.</p>
+          <button class="btn" id="emptyOpenBtn">Open folder</button>
+          <p class="empty-state-note">Works in Chrome, Edge, and other Chromium-based browsers.</p>
+        </div>
+
+        <div class="doc" id="docView" hidden>
+          <div class="doc-head">
+            <div class="doc-title">
+              <span id="docName">untitled.md</span>
+              <span class="doc-dirty" id="docDirty" hidden>&bull; unsaved</span>
+            </div>
+            <div class="doc-tabs">
+              <button class="tab active" id="tabEdit" data-view="edit">Edit</button>
+              <button class="tab" id="tabPreview" data-view="preview">Preview</button>
+              <button class="tab" id="tabSplit" data-view="split">Split</button>
+            </div>
+            <div class="doc-actions">
+              <button class="btn btn-quiet" id="renameCurrentBtn" title="Rename this file">Rename</button>
+              <button class="btn btn-quiet" id="revealBtn" title="Show this file in the folder tree">Reveal</button>
+              <span class="save-hint">⌘S / Ctrl+S</span>
+              <button class="btn" id="saveBtn" disabled>Save</button>
+            </div>
+          </div>
+
+          <div class="toolbar" id="toolbar">
+            <div class="toolbar-group">
+              <button class="toolbar-btn" data-action="undo" title="Undo (Ctrl/Cmd+Z)">↶</button>
+              <button class="toolbar-btn" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
+            </div>
+            <div class="toolbar-sep"></div>
+            <div class="toolbar-group">
+              <button class="toolbar-btn" data-action="h1" title="Heading 1">H1</button>
+              <button class="toolbar-btn" data-action="h2" title="Heading 2">H2</button>
+              <button class="toolbar-btn" data-action="h3" title="Heading 3">H3</button>
+            </div>
+            <div class="toolbar-sep"></div>
+            <div class="toolbar-group">
+              <button class="toolbar-btn" data-action="bold" title="Bold (Ctrl/Cmd+B)"><b>B</b></button>
+              <button class="toolbar-btn" data-action="italic" title="Italic (Ctrl/Cmd+I)"><i>i</i></button>
+              <button class="toolbar-btn" data-action="strike" title="Strikethrough"><s>S</s></button>
+              <button class="toolbar-btn" data-action="code" title="Inline code">&lt;/&gt;</button>
+            </div>
+            <div class="toolbar-sep"></div>
+            <div class="toolbar-group">
+              <button class="toolbar-btn" data-action="ul" title="Bulleted list">&bull; List</button>
+              <button class="toolbar-btn" data-action="ol" title="Numbered list">1. List</button>
+              <button class="toolbar-btn" data-action="task" title="Task list">&#9744; Task</button>
+              <button class="toolbar-btn" data-action="quote" title="Quote">&ldquo;</button>
+            </div>
+            <div class="toolbar-sep"></div>
+            <div class="toolbar-group">
+              <button class="toolbar-btn" data-action="link" title="Link">Link</button>
+              <button class="toolbar-btn" data-action="image" title="Image">Image</button>
+              <button class="toolbar-btn" data-action="codeblock" title="Code block">Block</button>
+              <button class="toolbar-btn" data-action="table" title="Table">Table</button>
+              <button class="toolbar-btn" data-action="hr" title="Horizontal rule">&mdash;</button>
+            </div>
+          </div>
+
+          <div class="doc-body" id="docBody">
+            <div class="editor-wrap" id="editorWrap">
+              <div class="editor-highlight" id="editorHighlight" aria-hidden="true"></div>
+              <textarea id="editor" class="editor" spellcheck="false" placeholder="Start writing…"></textarea>
+            </div>
+            <div class="doc-resizer" id="docResizer"></div>
+            <div id="preview" class="preview"></div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <footer class="app-footer">
+      <span>ftnMDReader</span>
+      <span class="app-footer-version" id="appVersion"></span>
+    </footer>
+  </div>
+
+  <!-- New file dialog -->
+  <dialog id="newFileDialog">
+    <form method="dialog" id="newFileForm">
+      <h2>New markdown file</h2>
+      <label for="newFileName" id="newFileLocationLabel">File name</label>
+      <input type="text" id="newFileName" placeholder="notes" autocomplete="off">
+      <span class="dialog-ext">.md</span>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-quiet" id="cancelNewFile">Cancel</button>
+        <button type="submit" class="btn" id="confirmNewFile">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- New folder dialog -->
+  <dialog id="newFolderDialog">
+    <form method="dialog" id="newFolderForm">
+      <h2>New folder</h2>
+      <label for="newFolderName" id="newFolderLocationLabel">Folder name</label>
+      <input type="text" id="newFolderName" placeholder="drafts" autocomplete="off">
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-quiet" id="cancelNewFolder">Cancel</button>
+        <button type="submit" class="btn" id="confirmNewFolder">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Move file dialog -->
+  <dialog id="moveFileDialog">
+    <form method="dialog" id="moveFileForm">
+      <h2>Move file</h2>
+      <p class="move-file-name" id="moveFileName"></p>
+      <label for="moveFileTarget">Destination</label>
+      <select id="moveFileTarget"></select>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-quiet" id="cancelMoveFile">Cancel</button>
+        <button type="submit" class="btn" id="confirmMoveFile">Move</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Rename dialog -->
+  <dialog id="renameDialog">
+    <form method="dialog" id="renameForm">
+      <h2 id="renameDialogTitle">Rename</h2>
+      <label for="renameInput">New name</label>
+      <input type="text" id="renameInput" autocomplete="off">
+      <span class="dialog-ext" id="renameExt" hidden>.md</span>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-quiet" id="cancelRename">Cancel</button>
+        <button type="submit" class="btn" id="confirmRename">Rename</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toast / status messages -->
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="app.js"></script>
+</body>
+</html>
