@@ -80,6 +80,9 @@
     quickOpenInput:    document.getElementById("quickOpenInput"),
     quickOpenResults:  document.getElementById("quickOpenResults"),
     appVersion:        document.getElementById("appVersion"),
+    footerFolder:      document.getElementById("footerFolder"),
+    footerFolderPath:  document.getElementById("footerFolderPath"),
+    footerCopyPathBtn: document.getElementById("footerCopyPathBtn"),
     toast:         document.getElementById("toast"),
   };
 
@@ -330,6 +333,7 @@
   }
 
   function renderFileList() {
+    updateFooterFolderPath();
     el.fileList.innerHTML = "";
     el.fileCount.textContent = state.files.size ? String(state.files.size) : "";
 
@@ -1289,11 +1293,7 @@
     const text = code ? code.textContent : pre.textContent;
 
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        copyWithFallback(text);
-      }
+      await copyText(text);
       btn.textContent = "Copied!";
       btn.classList.add("copied");
     } catch (err) {
@@ -1307,8 +1307,17 @@
     }, 1600);
   }
 
-  // Fallback for contexts where the async Clipboard API isn't available
-  // (e.g. some file:// pages): a hidden, selected textarea + execCommand.
+  // Shared clipboard helper: the async Clipboard API where available,
+  // falling back to a hidden textarea + execCommand for contexts where
+  // it isn't (e.g. some file:// pages).
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      copyWithFallback(text);
+    }
+  }
+
   function copyWithFallback(text) {
     const ta = document.createElement("textarea");
     ta.value = text;
@@ -1587,6 +1596,46 @@
     } catch {}
   }
 
+  // ---------- Footer folder path ----------
+  // Browsers deliberately don't expose the real OS filesystem path for a
+  // folder opened via the File System Access API (that would leak local
+  // disk layout to the page) — only the folder's own name is available.
+  // This shows that name, plus the relative path to the open file (built
+  // from our own path bookkeeping) when one is open, which is the closest
+  // honest equivalent to "the current path".
+
+  function updateFooterFolderPath() {
+    if (!state.dirHandle) {
+      el.footerFolder.hidden = true;
+      return;
+    }
+    const rootName = state.dirHandle.name;
+    const fullPath = state.currentPath ? `${rootName}/${state.currentPath}` : rootName;
+    el.footerFolderPath.textContent = fullPath;
+    el.footerFolderPath.title = fullPath;
+    el.footerFolder.hidden = false;
+  }
+
+  async function copyFolderPath() {
+    const text = el.footerFolderPath.textContent;
+    if (!text) return;
+
+    try {
+      await copyText(text);
+      el.footerCopyPathBtn.textContent = "✓";
+      el.footerCopyPathBtn.classList.add("copied");
+      showToast("Copied to clipboard");
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't copy the path.");
+    }
+
+    setTimeout(() => {
+      el.footerCopyPathBtn.textContent = "⧉";
+      el.footerCopyPathBtn.classList.remove("copied");
+    }, 1400);
+  }
+
   // ---------- Split view resize ----------
   // The editor pane gets an explicit flex-basis (as a percentage of the
   // doc body's width) so it scales sensibly if the window is resized too.
@@ -1739,6 +1788,7 @@
   });
 
   el.toggleSidebarBtn.addEventListener("click", toggleSidebar);
+  el.footerCopyPathBtn.addEventListener("click", copyFolderPath);
   initSidebarResizer();
   restoreSidebarPrefs();
   initDocResizer();

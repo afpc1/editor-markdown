@@ -1032,6 +1032,43 @@ dialog::backdrop {
   text-decoration: underline;
 }
 
+.app-footer-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  justify-content: center;
+}
+
+#footerFolderPath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 380px;
+}
+
+.footer-copy-btn {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.footer-copy-btn:hover {
+  background: var(--line-soft);
+  color: var(--ink);
+}
+
+.footer-copy-btn.copied {
+  color: var(--teal-dark);
+}
+
 /* ---------- Reveal in sidebar ---------- */
 
 @keyframes flash-highlight {
