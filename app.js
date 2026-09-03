@@ -72,6 +72,13 @@
     cancelRename:      document.getElementById("cancelRename"),
     renameCurrentBtn:  document.getElementById("renameCurrentBtn"),
     revealBtn:         document.getElementById("revealBtn"),
+    exportPdfBtn:      document.getElementById("exportPdfBtn"),
+    deleteCurrentBtn:  document.getElementById("deleteCurrentBtn"),
+    refreshFolderBtn:  document.getElementById("refreshFolderBtn"),
+    quickOpenBtn:      document.getElementById("quickOpenBtn"),
+    quickOpenDialog:   document.getElementById("quickOpenDialog"),
+    quickOpenInput:    document.getElementById("quickOpenInput"),
+    quickOpenResults:  document.getElementById("quickOpenResults"),
     appVersion:        document.getElementById("appVersion"),
     toast:         document.getElementById("toast"),
   };
@@ -97,6 +104,8 @@
     draggingPath: null,        // path currently being dragged, for drop targets to read
     moveTargetFile: null,      // path pending a move via the "Move to folder…" dialog
     renameTarget: null,        // { path, kind } pending a rename via the "Rename" dialog
+    quickOpenMatches: [],      // paths currently listed in the quick-open results
+    quickOpenIndex: -1,        // index of the highlighted quick-open result
     splitPct: 50,               // editor's share of width in split view
   };
 
@@ -192,6 +201,8 @@
     el.folderLabel.textContent = handle.name;
     el.newFileBtn.disabled = false;
     el.newFolderBtn.disabled = false;
+    el.refreshFolderBtn.disabled = false;
+    el.quickOpenBtn.disabled = false;
     hideReconnectBanner();
     await refreshFileList();
   }
@@ -249,6 +260,31 @@
     state.expandedPaths.clear();
     await scanDirectory(state.dirHandle, "");
     renderFileList();
+  }
+
+  // Manual "Refresh" button: re-scans the folder like refreshFileList(),
+  // but preserves which folders were expanded and which file was open,
+  // since the person triggering this is likely mid-work rather than
+  // just having opened the folder for the first time.
+  async function refreshFolderManual() {
+    if (!state.dirHandle) return;
+
+    const previousExpanded = new Set(state.expandedPaths);
+    const previousCurrentPath = state.currentPath;
+
+    state.files.clear();
+    state.folders.clear();
+    state.contentMatches.clear();
+    await scanDirectory(state.dirHandle, "");
+
+    state.expandedPaths = new Set([...previousExpanded].filter((p) => state.folders.has(p)));
+    renderFileList();
+
+    if (previousCurrentPath && !state.files.has(previousCurrentPath)) {
+      showToast("The open file no longer appears in this folder.", 3400);
+    } else {
+      showToast("Folder refreshed");
+    }
   }
 
   // Walks the whole folder tree up front (rather than lazily per-expand)
@@ -322,9 +358,9 @@
     }
   }
 
-  function buildRowActionButton(symbol, title, onClick) {
+  function buildRowActionButton(symbol, title, onClick, danger) {
     const btn = document.createElement("button");
-    btn.className = "row-action";
+    btn.className = "row-action" + (danger ? " row-action-danger" : "");
     btn.type = "button";
     btn.title = title;
     btn.textContent = symbol;
@@ -351,6 +387,7 @@
     actions.appendChild(buildRowActionButton("📄+", "New file here", () => openNewFileDialog(path)));
     actions.appendChild(buildRowActionButton("📁+", "New folder here", () => openNewFolderDialog(path)));
     actions.appendChild(buildRowActionButton("✏️", "Rename folder…", () => openRenameDialog(path, "folder")));
+    actions.appendChild(buildRowActionButton("🗑️", "Delete folder…", () => deleteFolder(path), true));
     row.appendChild(actions);
 
     row.addEventListener("click", () => toggleFolder(path));
@@ -399,6 +436,7 @@
     actions.className = "row-actions";
     actions.appendChild(buildRowActionButton("✏️", "Rename file…", () => openRenameDialog(path, "file")));
     actions.appendChild(buildRowActionButton("📂", "Move to folder…", () => openMoveDialog(path)));
+    actions.appendChild(buildRowActionButton("🗑️", "Delete file…", () => deleteFile(path), true));
     row.appendChild(actions);
 
     row.addEventListener("dragstart", (e) => {
@@ -902,6 +940,56 @@
     el.renameInput.select();
   }
 
+  // ---------- Delete file / folder ----------
+
+  function closeCurrentDocument() {
+    state.currentPath = null;
+    state.currentHandle = null;
+    state.savedValue = "";
+    state.dirty = false;
+    el.editor.value = "";
+    updateHighlight();
+    el.docView.hidden = true;
+    el.emptyState.hidden = false;
+  }
+
+  async function deleteFile(path) {
+    const info = state.files.get(path);
+    if (!info) return;
+    if (!window.confirm(`Delete "${info.name}"? This can't be undone.`)) return;
+
+    try {
+      await parentHandleFor(info.parentPath).removeEntry(info.name);
+      state.files.delete(path);
+      state.contentMatches.delete(path);
+      if (state.currentPath === path) closeCurrentDocument();
+      renderFileList();
+      showToast(`Deleted ${info.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't delete that file.");
+    }
+  }
+
+  async function deleteFolder(path) {
+    const info = state.folders.get(path);
+    if (!info) return;
+    if (!window.confirm(`Delete "${info.name}" and everything inside it? This can't be undone.`)) return;
+
+    try {
+      await parentHandleFor(info.parentPath).removeEntry(info.name, { recursive: true });
+      const currentWasInside = state.currentPath &&
+        (state.currentPath === path || state.currentPath.startsWith(path + "/"));
+      pruneSubtree(path); // also removes the folder entry itself
+      if (currentWasInside) closeCurrentDocument();
+      renderFileList();
+      showToast(`Deleted ${info.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't delete that folder.");
+    }
+  }
+
   // ---------- Reveal in sidebar ----------
   // Browsers can't open the OS file explorer from a web page for security
   // reasons — this is the closest useful equivalent: expand every ancestor
@@ -934,6 +1022,99 @@
       row.classList.add("flash");
       setTimeout(() => row.classList.remove("flash"), 1200);
     });
+  }
+
+  // ---------- Quick open (Ctrl/Cmd+K) ----------
+  // A lightweight command-palette: type to filter every markdown file in
+  // the open folder by name/path, navigate with arrow keys, Enter to open.
+
+  function openQuickOpen() {
+    if (!state.dirHandle) return;
+    el.quickOpenInput.value = "";
+    renderQuickOpenResults("");
+    el.quickOpenDialog.showModal();
+    el.quickOpenInput.focus();
+  }
+
+  function renderQuickOpenResults(query) {
+    const lowerQuery = query.trim().toLowerCase();
+    let matches = [...state.files.entries()];
+
+    if (lowerQuery) {
+      matches = matches.filter(([path]) => path.toLowerCase().includes(lowerQuery));
+      matches.sort((a, b) => {
+        const aStarts = a[1].name.toLowerCase().startsWith(lowerQuery) ? 0 : 1;
+        const bStarts = b[1].name.toLowerCase().startsWith(lowerQuery) ? 0 : 1;
+        if (aStarts !== bStarts) return aStarts - bStarts;
+        return a[0].localeCompare(b[0]);
+      });
+    } else {
+      matches.sort((a, b) => a[0].localeCompare(b[0]));
+    }
+    matches = matches.slice(0, 50);
+
+    el.quickOpenResults.innerHTML = "";
+    state.quickOpenMatches = matches.map(([path]) => path);
+    state.quickOpenIndex = matches.length ? 0 : -1;
+
+    if (matches.length === 0) {
+      const li = document.createElement("li");
+      li.className = "quick-open-empty";
+      li.textContent = state.files.size ? "No files match." : "No markdown files in this folder.";
+      el.quickOpenResults.appendChild(li);
+      return;
+    }
+
+    matches.forEach(([path, info], idx) => {
+      const li = document.createElement("li");
+      li.className = "quick-open-item" + (idx === 0 ? " active" : "");
+      li.innerHTML =
+        `<span class="qo-name">${escapeHtml(info.name)}</span>` +
+        (info.parentPath ? `<span class="qo-path">${escapeHtml(info.parentPath)}</span>` : "");
+      li.addEventListener("click", () => { el.quickOpenDialog.close(); openFile(path); });
+      el.quickOpenResults.appendChild(li);
+    });
+  }
+
+  function moveQuickOpenSelection(delta) {
+    const items = [...el.quickOpenResults.querySelectorAll(".quick-open-item")];
+    if (items.length === 0) return;
+    items[state.quickOpenIndex]?.classList.remove("active");
+    state.quickOpenIndex = (state.quickOpenIndex + delta + items.length) % items.length;
+    items[state.quickOpenIndex].classList.add("active");
+    items[state.quickOpenIndex].scrollIntoView({ block: "nearest" });
+  }
+
+  function confirmQuickOpenSelection() {
+    const path = state.quickOpenMatches[state.quickOpenIndex];
+    if (!path) return;
+    el.quickOpenDialog.close();
+    openFile(path);
+  }
+
+  // ---------- Export to PDF ----------
+  // There's no in-browser way to generate a PDF file directly without a
+  // heavy extra library (and those typically rasterize the page, losing
+  // selectable/searchable text). Instead this renders the file to the
+  // print stylesheet above and calls the browser's native print dialog,
+  // where "Save as PDF" produces a real, text-based PDF.
+
+  function exportToPdf() {
+    if (!state.currentPath) {
+      showToast("Open a file first.");
+      return;
+    }
+
+    renderPreview(); // make sure the preview reflects the latest edits
+
+    const originalTitle = document.title;
+    document.title = basename(state.currentPath).replace(/\.(md|markdown)$/i, "");
+
+    const restoreTitle = () => { document.title = originalTitle; };
+    window.addEventListener("afterprint", restoreTitle, { once: true });
+    setTimeout(restoreTitle, 5000); // fallback in case afterprint doesn't fire
+
+    window.print();
   }
 
   // ---------- View mode (edit / preview / split) ----------
@@ -1497,6 +1678,26 @@
     if (state.currentPath) revealInSidebar(state.currentPath);
   });
 
+  el.exportPdfBtn.addEventListener("click", exportToPdf);
+
+  el.deleteCurrentBtn.addEventListener("click", () => {
+    if (state.currentPath) deleteFile(state.currentPath);
+  });
+
+  el.refreshFolderBtn.addEventListener("click", refreshFolderManual);
+
+  el.quickOpenBtn.addEventListener("click", openQuickOpen);
+
+  el.quickOpenInput.addEventListener("input", () => {
+    renderQuickOpenResults(el.quickOpenInput.value);
+  });
+
+  el.quickOpenInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); moveQuickOpenSelection(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); moveQuickOpenSelection(-1); }
+    else if (e.key === "Enter") { e.preventDefault(); confirmQuickOpenSelection(); }
+  });
+
   // Dropping a file on the "Files" header moves it back to the root.
   el.sidebarHead.addEventListener("dragover", (e) => {
     if (!state.draggingPath) return;
@@ -1581,6 +1782,10 @@
     if (document.activeElement === el.editor && cmdOrCtrl && e.key.toLowerCase() === "i") {
       e.preventDefault();
       applyFormatting("italic");
+    }
+    if (cmdOrCtrl && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      openQuickOpen();
     }
   });
 

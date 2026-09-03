@@ -22,6 +22,8 @@
 
       <div class="topbar-actions">
         <button class="btn btn-icon" id="toggleSidebarBtn" title="Show/hide the file list">☰</button>
+        <button class="btn btn-icon" id="refreshFolderBtn" disabled title="Refresh folder contents">⟳</button>
+        <button class="btn btn-quiet" id="quickOpenBtn" disabled title="Quick open (Ctrl/Cmd+K)">Quick open</button>
         <button class="btn" id="openFolderBtn" title="Open a folder from your computer">Open folder</button>
         <button class="btn btn-quiet" id="newFileBtn" disabled title="Create a new markdown file">New file</button>
         <button class="btn btn-quiet" id="newFolderBtn" disabled title="Create a new subfolder">New folder</button>
@@ -90,6 +92,8 @@
             <div class="doc-actions">
               <button class="btn btn-quiet" id="renameCurrentBtn" title="Rename this file">Rename</button>
               <button class="btn btn-quiet" id="revealBtn" title="Show this file in the folder tree">Reveal</button>
+              <button class="btn btn-quiet" id="exportPdfBtn" title="Export this file as PDF">Export PDF</button>
+              <button class="btn btn-quiet btn-danger" id="deleteCurrentBtn" title="Delete this file">Delete</button>
               <span class="save-hint">⌘S / Ctrl+S</span>
               <button class="btn" id="saveBtn" disabled>Save</button>
             </div>
@@ -205,6 +209,14 @@
         <button type="submit" class="btn" id="confirmRename">Rename</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Quick open (Ctrl/Cmd+K) -->
+  <dialog id="quickOpenDialog" class="quick-open-dialog">
+    <div class="quick-open-inner">
+      <input type="text" id="quickOpenInput" placeholder="Type a file name…" autocomplete="off">
+      <ul id="quickOpenResults" class="quick-open-results"></ul>
+    </div>
   </dialog>
 
   <!-- Toast / status messages -->

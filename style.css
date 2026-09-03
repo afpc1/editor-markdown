@@ -137,6 +137,11 @@ button {
   color: var(--ink);
 }
 
+.btn-danger:hover:not(:disabled) {
+  background: #FBEAEA;
+  color: #B3382C;
+}
+
 /* ---------- Reconnect banner ---------- */
 
 .reconnect-banner {
@@ -412,6 +417,11 @@ button {
 .row-action:hover {
   background: #E7F0EC;
   color: var(--teal-dark);
+}
+
+.row-action-danger:hover {
+  background: #FBEAEA;
+  color: #B3382C;
 }
 
 .snippet, .path-hint {
@@ -852,6 +862,72 @@ dialog::backdrop {
   background: rgba(34, 38, 31, 0.35);
 }
 
+.quick-open-dialog {
+  margin-top: 12vh;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.quick-open-inner {
+  display: flex;
+  flex-direction: column;
+  width: 520px;
+  max-width: 90vw;
+  max-height: 60vh;
+}
+
+#quickOpenInput {
+  border: none;
+  outline: none;
+  padding: 16px 18px;
+  font-size: 15px;
+  font-family: var(--sans);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+.quick-open-results {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.quick-open-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.quick-open-item .qo-path {
+  color: var(--ink-soft);
+  font-size: 11px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-open-item:hover,
+.quick-open-item.active {
+  background: #E7F0EC;
+  color: var(--teal-dark);
+}
+
+.quick-open-empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
 #newFileForm, #newFolderForm, #moveFileForm {
   padding: 22px 24px;
   width: 320px;
@@ -1017,4 +1093,52 @@ button:focus-visible,
 #newFileName:focus-visible {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
+}
+
+/* ---------- Export to PDF (print) ---------- */
+/* Triggered by window.print(); the browser's own "Save as PDF" print
+   destination is what actually produces the file. Everything except the
+   rendered preview is hidden, and code blocks switch to a light,
+   printer-friendly treatment instead of the on-screen dark theme. */
+
+@media print {
+  .topbar, .reconnect-banner, .sidebar, .sidebar-resizer,
+  .doc-head, .toolbar, .doc-resizer, .editor-wrap,
+  .app-footer, .toast, dialog {
+    display: none !important;
+  }
+
+  .workspace, .editor-area, .doc-body, #docView {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .preview {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #22261F !important;
+  }
+
+  .preview pre,
+  .preview pre code,
+  .preview pre code.hljs,
+  .preview pre code.hljs * {
+    background: transparent !important;
+    color: #22261F !important;
+  }
+
+  .preview pre {
+    background: #F4F3EE !important;
+    border: 1px solid #DAD5C4;
+  }
+
+  .copy-code-btn, .code-lang-label {
+    display: none !important;
+  }
 }
