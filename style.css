@@ -934,7 +934,10 @@ dialog::backdrop {
 .app-footer {
   flex-shrink: 0;
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 5px 18px;
   border-top: 1px solid var(--line);
   background: var(--panel);
@@ -942,6 +945,15 @@ dialog::backdrop {
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.2px;
+}
+
+.app-footer-link {
+  color: var(--teal-dark);
+  text-decoration: none;
+}
+
+.app-footer-link:hover {
+  text-decoration: underline;
 }
 
 /* ---------- Reveal in sidebar ---------- */
