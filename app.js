@@ -73,6 +73,7 @@
     renameCurrentBtn:  document.getElementById("renameCurrentBtn"),
     revealBtn:         document.getElementById("revealBtn"),
     exportPdfBtn:      document.getElementById("exportPdfBtn"),
+    exportHtmlBtn:     document.getElementById("exportHtmlBtn"),
     deleteCurrentBtn:  document.getElementById("deleteCurrentBtn"),
     refreshFolderBtn:  document.getElementById("refreshFolderBtn"),
     quickOpenBtn:      document.getElementById("quickOpenBtn"),
@@ -1121,6 +1122,99 @@
     window.print();
   }
 
+  // ---------- Export to HTML ----------
+  // Unlike the PDF export, this can be a genuine one-click download: HTML
+  // is just text, so it's assembled directly and saved via a Blob — no
+  // print dialog needed. Code blocks are highlighted into a *detached*
+  // element (not the live preview) so the exported file gets real, static
+  // color spans without any of the app's own UI chrome (copy buttons,
+  // language labels) leaking into the download. Layout/typography are
+  // inlined so the file looks right offline; only the exact syntax-color
+  // theme depends on the CDN stylesheet also used by the app itself.
+
+  function buildExportHtml(title, bodyHtml) {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<style>
+  :root {
+    --paper: #F1F0E8; --ink: #22261F; --ink-soft: #5B6156;
+    --line: #E1DDCC; --teal: #1F6F5C; --teal-dark: #164F41;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif; line-height: 1.7; }
+  .doc { max-width: 760px; margin: 0 auto; padding: 48px 36px 24px; }
+  .doc h1, .doc h2, .doc h3 { line-height: 1.3; }
+  .doc h1 { font-size: 30px; margin: 0 0 16px; }
+  .doc h2 { font-size: 23px; margin: 32px 0 12px; }
+  .doc h3 { font-size: 19px; margin: 26px 0 10px; }
+  .doc p { margin: 0 0 16px; }
+  .doc a { color: var(--teal-dark); }
+  .doc code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    background: #EAE7DA; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  .doc pre { background: #292C24; color: #F1F0E8; padding: 16px 18px; border-radius: 8px;
+    overflow-x: auto; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 13px; }
+  .doc pre code { background: none; padding: 0; color: inherit; }
+  .doc blockquote { margin: 0 0 16px; padding-left: 16px; border-left: 3px solid var(--teal); color: var(--ink-soft); }
+  .doc ul, .doc ol { margin: 0 0 16px; padding-left: 24px; }
+  .doc img { max-width: 100%; border-radius: 4px; }
+  .doc hr { border: none; border-top: 1px solid var(--line); margin: 32px 0; }
+  .doc table { border-collapse: collapse; margin: 0 0 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; }
+  .export-footer { max-width: 760px; margin: 0 auto; padding: 0 36px 40px;
+    font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div class="doc">
+${bodyHtml}
+</div>
+<p class="export-footer">Exported from ftnMDReader v${APP_VERSION}</p>
+</body>
+</html>`;
+  }
+
+  function exportToHtml() {
+    if (!state.currentPath) {
+      showToast("Open a file first.");
+      return;
+    }
+
+    const rawHtml = markdownToHtml(el.editor.value);
+
+    // Bake in real syntax-highlight spans on a detached element, so the
+    // exported file is plain static markup (no runtime JS dependency,
+    // no app-only UI like copy buttons or language labels).
+    const temp = document.createElement("div");
+    temp.innerHTML = rawHtml;
+    if (window.hljs) {
+      temp.querySelectorAll("pre code").forEach((codeEl) => {
+        try { hljs.highlightElement(codeEl); } catch { /* unrecognized language — leave plain */ }
+      });
+    }
+
+    const title = basename(state.currentPath).replace(/\.(md|markdown)$/i, "");
+    const doc = buildExportHtml(title, temp.innerHTML);
+
+    const blob = new Blob([doc], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+    showToast(`Exported ${title}.html`);
+  }
+
   // ---------- View mode (edit / preview / split) ----------
 
   function setView(view) {
@@ -1728,6 +1822,7 @@
   });
 
   el.exportPdfBtn.addEventListener("click", exportToPdf);
+  el.exportHtmlBtn.addEventListener("click", exportToHtml);
 
   el.deleteCurrentBtn.addEventListener("click", () => {
     if (state.currentPath) deleteFile(state.currentPath);
