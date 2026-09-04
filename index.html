@@ -27,6 +27,7 @@
         <button class="btn" id="openFolderBtn" title="Open a folder from your computer">Open folder</button>
         <button class="btn btn-quiet" id="newFileBtn" disabled title="Create a new markdown file">New file</button>
         <button class="btn btn-quiet" id="newFolderBtn" disabled title="Create a new subfolder">New folder</button>
+        <button class="btn btn-icon" id="helpBtn" title="About & help">?</button>
       </div>
     </header>
 
@@ -71,11 +72,11 @@
 
         <div class="empty-state" id="emptyState">
           <p class="empty-state-glyph">§</p>
-          <h1>A folder of markdown, open and editable</h1>
-          <p>ftnMDReader reads a folder on your computer, right in the browser. Nothing is uploaded anywhere — files
-             are only ever read and written on your own machine.</p>
-          <button class="btn" id="emptyOpenBtn">Open folder</button>
-          <p class="empty-state-note">Works in Chrome, Edge, and other Chromium-based browsers.</p>
+          <p class="empty-state-hint">No folder open yet.</p>
+          <div class="empty-state-actions">
+            <button class="btn" id="emptyOpenBtn">Open folder</button>
+            <button class="btn btn-quiet" id="emptyHelpBtn">What is this?</button>
+          </div>
         </div>
 
         <div class="doc" id="docView" hidden>
@@ -221,6 +222,21 @@
     <div class="quick-open-inner">
       <input type="text" id="quickOpenInput" placeholder="Type a file name…" autocomplete="off">
       <ul id="quickOpenResults" class="quick-open-results"></ul>
+    </div>
+  </dialog>
+
+  <!-- Help / About -->
+  <dialog id="helpDialog" class="help-dialog">
+    <div class="help-dialog-inner">
+      <button type="button" class="help-close-btn" id="helpCloseBtn" title="Close" aria-label="Close">✕</button>
+      <p class="help-glyph">§</p>
+      <h2>A folder of markdown, open and editable</h2>
+      <p class="help-desc">
+        ftnMDReader reads a folder on your computer, right in the browser. Nothing is uploaded anywhere — files
+        are only ever read and written on your own machine.
+      </p>
+      <button class="btn" id="helpOpenFolderBtn">Open folder</button>
+      <p class="help-note">Works in Chrome, Edge, and other Chromium-based browsers.</p>
     </div>
   </dialog>
 

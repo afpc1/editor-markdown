@@ -18,6 +18,7 @@
     folderLabel:   document.getElementById("folderLabel"),
     openFolderBtn: document.getElementById("openFolderBtn"),
     emptyOpenBtn:  document.getElementById("emptyOpenBtn"),
+    emptyHelpBtn:  document.getElementById("emptyHelpBtn"),
     newFileBtn:    document.getElementById("newFileBtn"),
     fileList:      document.getElementById("fileList"),
     fileCount:     document.getElementById("fileCount"),
@@ -45,6 +46,10 @@
     sidebarHead:        document.getElementById("sidebarHead"),
     sidebarResizer:     document.getElementById("sidebarResizer"),
     toggleSidebarBtn:   document.getElementById("toggleSidebarBtn"),
+    helpBtn:            document.getElementById("helpBtn"),
+    helpDialog:         document.getElementById("helpDialog"),
+    helpCloseBtn:       document.getElementById("helpCloseBtn"),
+    helpOpenFolderBtn:  document.getElementById("helpOpenFolderBtn"),
     searchInput:        document.getElementById("searchInput"),
     searchClear:        document.getElementById("searchClear"),
     searchContentToggle: document.getElementById("searchContentToggle"),
@@ -1690,6 +1695,12 @@ ${bodyHtml}
     } catch {}
   }
 
+  // ---------- Help / About modal ----------
+
+  function openHelpModal() {
+    el.helpDialog.showModal();
+  }
+
   // ---------- Footer folder path ----------
   // Browsers deliberately don't expose the real OS filesystem path for a
   // folder opened via the File System Access API (that would leak local
@@ -1779,6 +1790,7 @@ ${bodyHtml}
 
   el.openFolderBtn.addEventListener("click", openFolder);
   el.emptyOpenBtn.addEventListener("click", openFolder);
+  el.emptyHelpBtn.addEventListener("click", openHelpModal);
   el.newFileBtn.addEventListener("click", () => openNewFileDialog());
   el.cancelNewFile.addEventListener("click", () => el.newFileDialog.close());
 
@@ -1883,6 +1895,12 @@ ${bodyHtml}
   });
 
   el.toggleSidebarBtn.addEventListener("click", toggleSidebar);
+  el.helpBtn.addEventListener("click", openHelpModal);
+  el.helpCloseBtn.addEventListener("click", () => el.helpDialog.close());
+  el.helpOpenFolderBtn.addEventListener("click", () => {
+    el.helpDialog.close();
+    openFolder();
+  });
   el.footerCopyPathBtn.addEventListener("click", copyFolderPath);
   initSidebarResizer();
   restoreSidebarPrefs();

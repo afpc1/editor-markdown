@@ -486,10 +486,39 @@ button {
   font-family: var(--serif);
   font-size: 40px;
   color: var(--teal);
+  margin: 0 0 8px;
+}
+
+.empty-state-hint {
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin: 0 0 20px;
+}
+
+.empty-state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Help / About modal */
+
+.help-dialog-inner {
+  position: relative;
+  width: 420px;
+  max-width: 88vw;
+  padding: 40px 32px 32px;
+  text-align: center;
+}
+
+.help-glyph {
+  font-family: var(--serif);
+  font-size: 40px;
+  color: var(--teal);
   margin: 0 0 4px;
 }
 
-.empty-state h1 {
+.help-dialog-inner h2 {
   font-family: var(--serif);
   font-size: 22px;
   font-weight: normal;
@@ -497,16 +526,35 @@ button {
   margin: 0 0 12px;
 }
 
-.empty-state p {
+.help-desc {
   color: var(--ink-soft);
   line-height: 1.6;
   margin: 0 0 20px;
 }
 
-.empty-state-note {
+.help-note {
   font-size: 12px;
-  margin-top: 16px;
-  margin-bottom: 0;
+  color: var(--ink-soft);
+  margin: 16px 0 0;
+}
+
+.help-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 5px 8px;
+  border-radius: 4px;
+}
+
+.help-close-btn:hover {
+  background: var(--line-soft);
+  color: var(--ink);
 }
 
 /* Document view */
