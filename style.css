@@ -1,34 +1,41 @@
+@charset "UTF-8";
 /* ---------------------------------------------------------
-   ftnMDReader — a folder of markdown
+   ftnMDReader — stylesheet (SCSS source)
+
+   This is the editable source for style.css. Compile it with the
+   Sass CLI (or any Sass-aware build step) to regenerate style.css:
+
+     npm install -g sass
+     sass style.scss style.css
+
    Palette:  paper #F2F1EA · panel #FFFFFF · ink #22261F
              teal #1F6F5C (accent) · gold #B8862B (dirty state)
              line #DEDACB
    Type: Georgia (serif, reading) / ui-monospace (files, editor)
---------------------------------------------------------- */
 
+   Organized to mirror the app's own structure — each section below
+   corresponds to one visual area or component, in roughly the same
+   top-to-bottom order you'd encounter them in the running app.
+--------------------------------------------------------- */
 :root {
-  --paper:      #F1F0E8;
-  --panel:      #FFFFFF;
-  --ink:        #22261F;
-  --ink-soft:   #5B6156;
-  --line:       #E1DDCC;
-  --line-soft:  #EAE7DA;
-  --teal:       #1F6F5C;
-  --teal-dark:  #164F41;
-  --gold:       #B8862B;
+  --paper: #F1F0E8;
+  --panel: #FFFFFF;
+  --ink: #22261F;
+  --ink-soft: #5B6156;
+  --line: #E1DDCC;
+  --line-soft: #EAE7DA;
+  --teal: #1F6F5C;
+  --teal-dark: #164F41;
+  --gold: #B8862B;
   --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
   --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-/* Any element below sets its own `display` (flex, inline-block, etc.),
-   which — per the CSS cascade — always beats the browser's built-in
-   `[hidden] { display: none }` rule, regardless of selector specificity,
-   because that built-in rule is lower-priority "user agent" origin while
-   ours is "author" origin. Without this, toggling `.hidden = true` in JS
-   on any of these elements would not actually hide them. */
 .reconnect-banner[hidden],
 .doc[hidden],
 .toolbar[hidden],
@@ -60,8 +67,6 @@ button {
   flex-direction: column;
 }
 
-/* ---------- Top bar ---------- */
-
 .topbar {
   display: flex;
   align-items: center;
@@ -72,25 +77,21 @@ button {
   background: var(--panel);
   flex-shrink: 0;
 }
-
-.brand {
+.topbar .brand {
   display: flex;
   align-items: baseline;
   gap: 6px;
   font-family: var(--serif);
 }
-
-.brand-mark {
+.topbar .brand-mark {
   color: var(--teal);
   font-size: 22px;
   line-height: 1;
 }
-
-.brand-name {
+.topbar .brand-name {
   font-size: 17px;
   letter-spacing: 0.2px;
 }
-
 .topbar-folder {
   flex: 1;
   color: var(--ink-soft);
@@ -100,13 +101,10 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .topbar-actions {
   display: flex;
   gap: 8px;
 }
-
-/* ---------- Buttons ---------- */
 
 .btn {
   border: 1px solid var(--teal);
@@ -118,26 +116,21 @@ button {
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
-
 .btn:hover:not(:disabled) {
   background: var(--teal-dark);
   border-color: var(--teal-dark);
 }
-
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-
 .btn-quiet {
   background: transparent;
   color: var(--teal);
 }
-
 .btn-quiet:hover:not(:disabled) {
   background: var(--line-soft);
 }
-
 .btn-icon {
   background: transparent;
   color: var(--ink-soft);
@@ -145,18 +138,14 @@ button {
   padding: 6px 10px;
   line-height: 1;
 }
-
 .btn-icon:hover {
   background: var(--line-soft);
   color: var(--ink);
 }
-
 .btn-danger:hover:not(:disabled) {
   background: #FBEAEA;
   color: #B3382C;
 }
-
-/* ---------- Reconnect banner ---------- */
 
 .reconnect-banner {
   display: flex;
@@ -170,7 +159,6 @@ button {
   font-size: 13px;
   flex-shrink: 0;
 }
-
 .reconnect-banner strong {
   font-family: var(--mono);
   font-weight: 600;
@@ -181,21 +169,20 @@ button {
   gap: 8px;
   flex-shrink: 0;
 }
-
 .reconnect-actions .btn {
   padding: 5px 12px;
   font-size: 12.5px;
 }
-
-/* ---------- Workspace layout ---------- */
 
 .workspace {
   flex: 1;
   display: flex;
   min-height: 0;
 }
-
-/* ---------- Sidebar ---------- */
+.workspace.sidebar-hidden .sidebar,
+.workspace.sidebar-hidden .sidebar-resizer {
+  display: none;
+}
 
 .sidebar {
   width: 240px;
@@ -216,7 +203,6 @@ button {
   background: transparent;
   position: relative;
 }
-
 .sidebar-resizer::after {
   content: "";
   position: absolute;
@@ -226,18 +212,11 @@ button {
   width: 1px;
   background: var(--line);
 }
-
-.sidebar-resizer:hover::after,
-.sidebar-resizer.active::after {
+.sidebar-resizer:hover::after, .sidebar-resizer.active::after {
   left: 0;
   width: 5px;
   background: var(--teal);
   opacity: 0.5;
-}
-
-.workspace.sidebar-hidden .sidebar,
-.workspace.sidebar-hidden .sidebar-resizer {
-  display: none;
 }
 
 .sidebar-head {
@@ -247,6 +226,11 @@ button {
   color: var(--ink-soft);
   font-size: 12px;
   transition: background 100ms ease;
+}
+.sidebar-head.drop-target {
+  background: #E7F0EC;
+  outline: 1.5px dashed var(--teal);
+  outline-offset: -2px;
 }
 
 .search-box {
@@ -259,17 +243,9 @@ button {
   border-radius: 5px;
   background: var(--paper);
 }
-
 .search-box:focus-within {
   border-color: var(--teal);
 }
-
-.search-icon {
-  color: var(--ink-soft);
-  font-size: 13px;
-  flex-shrink: 0;
-}
-
 .search-box input {
   flex: 1;
   min-width: 0;
@@ -281,6 +257,12 @@ button {
   color: var(--ink);
 }
 
+.search-icon {
+  color: var(--ink-soft);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
 .search-clear {
   border: none;
   background: transparent;
@@ -290,7 +272,6 @@ button {
   padding: 2px;
   flex-shrink: 0;
 }
-
 .search-clear:hover {
   color: var(--ink);
 }
@@ -305,7 +286,6 @@ button {
   cursor: pointer;
   user-select: none;
 }
-
 .search-content-toggle input {
   accent-color: var(--teal);
 }
@@ -321,19 +301,21 @@ button {
   overflow-y: auto;
   flex: 1;
 }
-
 .file-list li.empty-hint {
   padding: 10px 10px;
   color: var(--ink-soft);
   font-size: 12.5px;
   line-height: 1.5;
 }
-
-.file-item {
-  display: flex;
-  flex-direction: column;
+.file-list::-webkit-scrollbar {
+  width: 9px;
+}
+.file-list::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 5px;
 }
 
+.file-item,
 .folder-item {
   display: flex;
   flex-direction: column;
@@ -356,16 +338,14 @@ button {
   font-size: 12.5px;
   color: var(--ink);
 }
-
 .item-row:hover {
   background: var(--line-soft);
 }
-
-.file-item.selected > .item-row {
+.item-row.drop-target {
   background: #E7F0EC;
-  color: var(--teal-dark);
+  outline: 1.5px dashed var(--teal);
+  outline-offset: -1.5px;
 }
-
 .item-row .caret {
   width: 14px;
   flex-shrink: 0;
@@ -373,13 +353,11 @@ button {
   font-size: 9px;
   color: var(--ink-soft);
 }
-
 .item-row .icon {
   flex-shrink: 0;
   font-size: 11px;
   opacity: 0.85;
 }
-
 .item-row .dot {
   width: 5px;
   height: 5px;
@@ -388,11 +366,6 @@ button {
   flex-shrink: 0;
   visibility: hidden;
 }
-
-.file-item.dirty > .item-row .dot {
-  visibility: visible;
-}
-
 .item-row .name {
   flex: 1;
   min-width: 0;
@@ -400,11 +373,23 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .item-row mark {
   background: #FBE7A1;
   color: inherit;
   border-radius: 2px;
+}
+
+.file-item.selected > .item-row {
+  background: #E7F0EC;
+  color: var(--teal-dark);
+}
+
+.file-item.dirty > .item-row .dot {
+  visibility: visible;
+}
+
+.file-item.dragging {
+  opacity: 0.45;
 }
 
 .row-actions {
@@ -427,18 +412,17 @@ button {
   padding: 3px 4px;
   border-radius: 3px;
 }
-
 .row-action:hover {
   background: #E7F0EC;
   color: var(--teal-dark);
 }
-
 .row-action-danger:hover {
   background: #FBEAEA;
   color: #B3382C;
 }
 
-.snippet, .path-hint {
+.snippet,
+.path-hint {
   font-family: var(--sans);
   font-size: 11px;
   color: var(--ink-soft);
@@ -460,25 +444,17 @@ button {
   line-height: 1.5;
 }
 
-/* ---------- Drag and drop (moving files into folders) ---------- */
-
-.file-item.dragging {
-  opacity: 0.45;
+@keyframes flash-highlight {
+  0% {
+    background: #FBE7A1;
+  }
+  100% {
+    background: transparent;
+  }
 }
-
-.item-row.drop-target {
-  background: #E7F0EC;
-  outline: 1.5px dashed var(--teal);
-  outline-offset: -1.5px;
+.file-item.flash > .item-row {
+  animation: flash-highlight 1.2s ease;
 }
-
-.sidebar-head.drop-target {
-  background: #E7F0EC;
-  outline: 1.5px dashed var(--teal);
-  outline-offset: -2px;
-}
-
-/* ---------- Editor area ---------- */
 
 .editor-area {
   flex: 1;
@@ -487,35 +463,28 @@ button {
   flex-direction: column;
 }
 
-/* Empty state */
-
 .empty-state {
   margin: auto;
   max-width: 420px;
   text-align: center;
   padding: 40px;
 }
-
 .empty-state-glyph {
   font-family: var(--serif);
   font-size: 40px;
   color: var(--teal);
   margin: 0 0 8px;
 }
-
 .empty-state-hint {
   color: var(--ink-soft);
   line-height: 1.6;
   margin: 0 0 20px;
 }
-
 .empty-state-actions {
   display: flex;
   justify-content: center;
   gap: 8px;
 }
-
-/* Help / About modal */
 
 .help-dialog-inner {
   position: relative;
@@ -524,20 +493,19 @@ button {
   padding: 40px 32px 32px;
   text-align: center;
 }
-
-.help-glyph {
-  font-family: var(--serif);
-  font-size: 40px;
-  color: var(--teal);
-  margin: 0 0 4px;
-}
-
 .help-dialog-inner h2 {
   font-family: var(--serif);
   font-size: 22px;
   font-weight: normal;
   line-height: 1.3;
   margin: 0 0 12px;
+}
+
+.help-glyph {
+  font-family: var(--serif);
+  font-size: 40px;
+  color: var(--teal);
+  margin: 0 0 4px;
 }
 
 .help-desc {
@@ -565,13 +533,10 @@ button {
   padding: 5px 8px;
   border-radius: 4px;
 }
-
 .help-close-btn:hover {
   background: var(--line-soft);
   color: var(--ink);
 }
-
-/* Document view */
 
 .doc {
   display: flex;
@@ -618,11 +583,10 @@ button {
   cursor: pointer;
   color: var(--ink-soft);
 }
-
 .tab.active {
   background: var(--panel);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .doc-actions {
@@ -648,19 +612,16 @@ button {
   flex-shrink: 0;
   flex-wrap: wrap;
 }
-
 .toolbar-group {
   display: flex;
   gap: 2px;
 }
-
 .toolbar-sep {
   width: 1px;
   height: 18px;
   background: var(--line);
   flex-shrink: 0;
 }
-
 .toolbar-btn {
   border: 1px solid transparent;
   background: transparent;
@@ -677,13 +638,11 @@ button {
   justify-content: center;
   white-space: nowrap;
 }
-
 .toolbar-btn:hover {
   background: var(--line-soft);
   color: var(--ink);
   border-color: var(--line);
 }
-
 .toolbar-btn:active {
   background: #E7F0EC;
   color: var(--teal-dark);
@@ -693,6 +652,15 @@ button {
   flex: 1;
   display: flex;
   min-height: 0;
+}
+.doc-body.mode-edit .preview {
+  display: none;
+}
+.doc-body.mode-preview .editor-wrap {
+  display: none;
+}
+.doc-body:not(.mode-split) .doc-resizer {
+  display: none;
 }
 
 .editor-wrap {
@@ -728,7 +696,6 @@ button {
   overflow-y: auto;
   z-index: 1;
 }
-
 .editor::placeholder {
   color: var(--ink-soft);
   opacity: 0.6;
@@ -741,20 +708,57 @@ button {
   z-index: 0;
 }
 
-.tok-heading { color: var(--teal-dark); font-weight: 700; }
-.tok-bold { font-weight: 700; }
-.tok-italic { font-style: italic; }
-.tok-strike { color: var(--ink-soft); text-decoration: line-through; }
-.tok-code { color: #A24E2A; background: rgba(184, 134, 43, 0.14); }
-.tok-link { color: var(--teal-dark); text-decoration: underline; }
-.tok-quote-marker { color: var(--teal); font-weight: 700; }
-.tok-quote { color: var(--ink-soft); font-style: italic; }
-.tok-list-marker { color: var(--teal); font-weight: 700; }
-.tok-task-checked { color: var(--gold); font-weight: 700; }
-.tok-task-unchecked { color: var(--ink-soft); font-weight: 700; }
-.tok-hr { color: var(--ink-soft); }
-.tok-fence { color: var(--ink-soft); }
-.tok-code-line { color: #A24E2A; }
+.tok-heading {
+  color: var(--teal-dark);
+  font-weight: 700;
+}
+.tok-bold {
+  font-weight: 700;
+}
+.tok-italic {
+  font-style: italic;
+}
+.tok-strike {
+  color: var(--ink-soft);
+  text-decoration: line-through;
+}
+.tok-code {
+  color: #A24E2A;
+  background: rgba(184, 134, 43, 0.14);
+}
+.tok-link {
+  color: var(--teal-dark);
+  text-decoration: underline;
+}
+.tok-quote-marker {
+  color: var(--teal);
+  font-weight: 700;
+}
+.tok-quote {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+.tok-list-marker {
+  color: var(--teal);
+  font-weight: 700;
+}
+.tok-task-checked {
+  color: var(--gold);
+  font-weight: 700;
+}
+.tok-task-unchecked {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+.tok-hr {
+  color: var(--ink-soft);
+}
+.tok-fence {
+  color: var(--ink-soft);
+}
+.tok-code-line {
+  color: #A24E2A;
+}
 
 .preview {
   flex: 1;
@@ -765,16 +769,28 @@ button {
   font-family: var(--serif);
   line-height: 1.7;
 }
-
 .preview h1, .preview h2, .preview h3 {
   font-family: var(--serif);
   line-height: 1.3;
 }
-.preview h1 { font-size: 26px; margin: 0 0 14px; }
-.preview h2 { font-size: 21px; margin: 28px 0 10px; }
-.preview h3 { font-size: 17px; margin: 22px 0 8px; }
-.preview p { margin: 0 0 14px; }
-.preview a { color: var(--teal-dark); }
+.preview h1 {
+  font-size: 26px;
+  margin: 0 0 14px;
+}
+.preview h2 {
+  font-size: 21px;
+  margin: 28px 0 10px;
+}
+.preview h3 {
+  font-size: 17px;
+  margin: 22px 0 8px;
+}
+.preview p {
+  margin: 0 0 14px;
+}
+.preview a {
+  color: var(--teal-dark);
+}
 .preview code {
   font-family: var(--mono);
   background: var(--line-soft);
@@ -794,20 +810,59 @@ button {
   padding: 0;
   color: inherit;
 }
-
-/* Let highlight.js color the tokens, but keep our own box (background,
-   radius, padding) so the theme doesn't fight the app's visual design. */
 .preview pre code.hljs {
   background: transparent !important;
   padding: 0 !important;
+}
+.preview blockquote {
+  margin: 0 0 14px;
+  padding-left: 14px;
+  border-left: 3px solid var(--teal);
+  color: var(--ink-soft);
+}
+.preview ul, .preview ol {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+.preview img {
+  max-width: 100%;
+}
+.preview hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 24px 0;
+}
+.preview table {
+  border-collapse: collapse;
+  margin: 0 0 14px;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.preview th, .preview td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+}
+.preview::-webkit-scrollbar {
+  width: 9px;
+}
+.preview::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 5px;
 }
 
 .code-block-wrap {
   position: relative;
 }
-
 .code-block-wrap.has-label pre {
   padding-top: 30px;
+}
+.code-block-wrap:hover .copy-code-btn {
+  opacity: 1;
+}
+
+.copy-code-btn:focus-visible {
+  opacity: 1;
 }
 
 .code-lang-label {
@@ -837,10 +892,6 @@ button {
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease;
 }
-.code-block-wrap:hover .copy-code-btn,
-.copy-code-btn:focus-visible {
-  opacity: 1;
-}
 .copy-code-btn:hover {
   background: rgba(255, 255, 255, 0.18);
 }
@@ -849,37 +900,6 @@ button {
   border-color: var(--teal);
   opacity: 1;
 }
-.preview blockquote {
-  margin: 0 0 14px;
-  padding-left: 14px;
-  border-left: 3px solid var(--teal);
-  color: var(--ink-soft);
-}
-.preview ul, .preview ol {
-  margin: 0 0 14px;
-  padding-left: 22px;
-}
-.preview img { max-width: 100%; }
-.preview hr {
-  border: none;
-  border-top: 1px solid var(--line);
-  margin: 24px 0;
-}
-.preview table {
-  border-collapse: collapse;
-  margin: 0 0 14px;
-  font-family: var(--sans);
-  font-size: 13px;
-}
-.preview th, .preview td {
-  border: 1px solid var(--line);
-  padding: 6px 10px;
-  text-align: left;
-}
-
-/* view modes */
-.doc-body.mode-edit .preview { display: none; }
-.doc-body.mode-preview .editor-wrap { display: none; }
 
 .doc-resizer {
   width: 5px;
@@ -888,7 +908,6 @@ button {
   background: transparent;
   position: relative;
 }
-
 .doc-resizer::after {
   content: "";
   position: absolute;
@@ -898,28 +917,19 @@ button {
   width: 1px;
   background: var(--line);
 }
-
-.doc-resizer:hover::after,
-.doc-resizer.active::after {
+.doc-resizer:hover::after, .doc-resizer.active::after {
   left: 0;
   width: 5px;
   background: var(--teal);
   opacity: 0.5;
 }
 
-.doc-body:not(.mode-split) .doc-resizer {
-  display: none;
-}
-
-/* ---------- Dialog ---------- */
-
 dialog {
   border: none;
   border-radius: 8px;
   padding: 0;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
 }
-
 dialog::backdrop {
   background: rgba(34, 38, 31, 0.35);
 }
@@ -967,7 +977,6 @@ dialog::backdrop {
   font-size: 13px;
   color: var(--ink);
 }
-
 .quick-open-item .qo-path {
   color: var(--ink-soft);
   font-size: 11px;
@@ -976,9 +985,7 @@ dialog::backdrop {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.quick-open-item:hover,
-.quick-open-item.active {
+.quick-open-item:hover, .quick-open-item.active {
   background: #E7F0EC;
   color: var(--teal-dark);
 }
@@ -995,36 +1002,11 @@ dialog::backdrop {
   width: 320px;
   font-family: var(--sans);
 }
-
 #newFileForm h2, #newFolderForm h2, #moveFileForm h2 {
   font-family: var(--serif);
   font-size: 18px;
   font-weight: normal;
   margin: 0 0 16px;
-}
-
-.move-file-name {
-  font-family: var(--mono);
-  font-size: 13px;
-  background: var(--paper);
-  border-radius: 4px;
-  padding: 6px 10px;
-  margin: 0 0 16px;
-}
-
-#moveFileTarget {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  font-family: var(--mono);
-  font-size: 13px;
-  outline: none;
-  background: #fff;
-}
-
-#moveFileTarget:focus {
-  border-color: var(--teal);
 }
 
 #newFileForm label, #newFolderForm label {
@@ -1055,8 +1037,30 @@ dialog::backdrop {
   font-size: 13px;
   outline: none;
 }
-
 #newFileName:focus, #newFolderName:focus {
+  border-color: var(--teal);
+}
+
+.move-file-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--paper);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin: 0 0 16px;
+}
+
+#moveFileTarget {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+}
+#moveFileTarget:focus {
   border-color: var(--teal);
 }
 
@@ -1066,8 +1070,6 @@ dialog::backdrop {
   gap: 8px;
   margin-top: 20px;
 }
-
-/* ---------- Footer ---------- */
 
 .app-footer {
   flex-shrink: 0;
@@ -1084,16 +1086,13 @@ dialog::backdrop {
   font-size: 10.5px;
   letter-spacing: 0.2px;
 }
-
 .app-footer-link {
   color: var(--teal-dark);
   text-decoration: none;
 }
-
 .app-footer-link:hover {
   text-decoration: underline;
 }
-
 .app-footer-folder {
   display: flex;
   align-items: center;
@@ -1121,28 +1120,13 @@ dialog::backdrop {
   border-radius: 3px;
   flex-shrink: 0;
 }
-
 .footer-copy-btn:hover {
   background: var(--line-soft);
   color: var(--ink);
 }
-
 .footer-copy-btn.copied {
   color: var(--teal-dark);
 }
-
-/* ---------- Reveal in sidebar ---------- */
-
-@keyframes flash-highlight {
-  0% { background: #FBE7A1; }
-  100% { background: transparent; }
-}
-
-.file-item.flash > .item-row {
-  animation: flash-highlight 1.2s ease;
-}
-
-/* ---------- Toast ---------- */
 
 .toast {
   position: fixed;
@@ -1154,39 +1138,31 @@ dialog::backdrop {
   padding: 9px 16px;
   border-radius: 5px;
   font-size: 13px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
 }
-
-/* ---------- Scrollbars (subtle) ---------- */
-
-.file-list::-webkit-scrollbar,
-.preview::-webkit-scrollbar {
-  width: 9px;
-}
-.file-list::-webkit-scrollbar-thumb,
-.preview::-webkit-scrollbar-thumb {
-  background: var(--line);
-  border-radius: 5px;
-}
-
-/* ---------- Responsive ---------- */
 
 @media (max-width: 720px) {
-  .sidebar { width: 180px; }
-  .doc-body.mode-split { flex-direction: column; }
-  .doc-body.mode-split .editor-wrap { flex: 1 !important; }
-  .doc-resizer { display: none; }
-  .editor, .preview { padding: 16px; }
+  .sidebar {
+    width: 180px;
+  }
+  .doc-body.mode-split {
+    flex-direction: column;
+  }
+  .doc-body.mode-split .editor-wrap {
+    flex: 1 !important;
+  }
+  .doc-resizer {
+    display: none;
+  }
+  .editor, .preview {
+    padding: 16px;
+  }
 }
-
-/* ---------- Reduced motion ---------- */
-
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  * {
+    transition: none !important;
+  }
 }
-
-/* ---------- Focus visibility ---------- */
-
 button:focus-visible,
 .file-item:focus-visible,
 #newFileName:focus-visible {
@@ -1194,25 +1170,17 @@ button:focus-visible,
   outline-offset: 2px;
 }
 
-/* ---------- Export to PDF (print) ---------- */
-/* Triggered by window.print(); the browser's own "Save as PDF" print
-   destination is what actually produces the file. Everything except the
-   rendered preview is hidden, and code blocks switch to a light,
-   printer-friendly treatment instead of the on-screen dark theme. */
-
 @media print {
   .topbar, .reconnect-banner, .sidebar, .sidebar-resizer,
   .doc-head, .toolbar, .doc-resizer, .editor-wrap,
   .app-footer, .toast, dialog {
     display: none !important;
   }
-
   .workspace, .editor-area, .doc-body, #docView {
     display: block !important;
     height: auto !important;
     overflow: visible !important;
   }
-
   .preview {
     display: block !important;
     position: static !important;
@@ -1223,20 +1191,17 @@ button:focus-visible,
     background: #fff !important;
     color: #22261F !important;
   }
-
-  .preview pre,
+  .preview pre {
+    background: #F4F3EE !important;
+    border: 1px solid #DAD5C4;
+    color: #22261F !important;
+  }
   .preview pre code,
   .preview pre code.hljs,
   .preview pre code.hljs * {
     background: transparent !important;
     color: #22261F !important;
   }
-
-  .preview pre {
-    background: #F4F3EE !important;
-    border: 1px solid #DAD5C4;
-  }
-
   .copy-code-btn, .code-lang-label {
     display: none !important;
   }
