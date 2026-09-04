@@ -23,6 +23,20 @@
 
 * { box-sizing: border-box; }
 
+/* Any element below sets its own `display` (flex, inline-block, etc.),
+   which — per the CSS cascade — always beats the browser's built-in
+   `[hidden] { display: none }` rule, regardless of selector specificity,
+   because that built-in rule is lower-priority "user agent" origin while
+   ours is "author" origin. Without this, toggling `.hidden = true` in JS
+   on any of these elements would not actually hide them. */
+.reconnect-banner[hidden],
+.doc[hidden],
+.toolbar[hidden],
+.app-footer-folder[hidden],
+.dialog-ext[hidden] {
+  display: none;
+}
+
 html, body {
   height: 100%;
   margin: 0;

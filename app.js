@@ -17,7 +17,9 @@
   const el = {
     folderLabel:   document.getElementById("folderLabel"),
     openFolderBtn: document.getElementById("openFolderBtn"),
+    emptyStateHint: document.getElementById("emptyStateHint"),
     emptyOpenBtn:  document.getElementById("emptyOpenBtn"),
+    emptyNewFileBtn: document.getElementById("emptyNewFileBtn"),
     emptyHelpBtn:  document.getElementById("emptyHelpBtn"),
     newFileBtn:    document.getElementById("newFileBtn"),
     fileList:      document.getElementById("fileList"),
@@ -75,6 +77,7 @@
     renameInput:       document.getElementById("renameInput"),
     renameExt:         document.getElementById("renameExt"),
     cancelRename:      document.getElementById("cancelRename"),
+    closeDocBtn:       document.getElementById("closeDocBtn"),
     renameCurrentBtn:  document.getElementById("renameCurrentBtn"),
     revealBtn:         document.getElementById("revealBtn"),
     exportPdfBtn:      document.getElementById("exportPdfBtn"),
@@ -213,6 +216,7 @@
     el.refreshFolderBtn.disabled = false;
     el.quickOpenBtn.disabled = false;
     hideReconnectBanner();
+    updateEmptyState();
     await refreshFileList();
   }
 
@@ -952,6 +956,29 @@
 
   // ---------- Delete file / folder ----------
 
+  async function closeDocument() {
+    if (!state.currentPath) return;
+    if (state.dirty && !(await confirmDiscard())) return;
+    closeCurrentDocument();
+    renderFileList();
+  }
+
+  // Empty state text/actions depend on whether a folder is already open:
+  // before opening one, "Open folder" is the call to action; once a folder
+  // is open but nothing is selected, guide toward picking or creating a
+  // file instead, since re-showing "Open folder" there would be misleading.
+  function updateEmptyState() {
+    if (state.dirHandle) {
+      el.emptyStateHint.textContent = "Select a file to edit, or create a new one.";
+      el.emptyOpenBtn.hidden = true;
+      el.emptyNewFileBtn.hidden = false;
+    } else {
+      el.emptyStateHint.textContent = "No folder open yet.";
+      el.emptyOpenBtn.hidden = false;
+      el.emptyNewFileBtn.hidden = true;
+    }
+  }
+
   function closeCurrentDocument() {
     state.currentPath = null;
     state.currentHandle = null;
@@ -961,6 +988,7 @@
     updateHighlight();
     el.docView.hidden = true;
     el.emptyState.hidden = false;
+    updateEmptyState();
   }
 
   async function deleteFile(path) {
@@ -1790,6 +1818,7 @@ ${bodyHtml}
 
   el.openFolderBtn.addEventListener("click", openFolder);
   el.emptyOpenBtn.addEventListener("click", openFolder);
+  el.emptyNewFileBtn.addEventListener("click", () => openNewFileDialog());
   el.emptyHelpBtn.addEventListener("click", openHelpModal);
   el.newFileBtn.addEventListener("click", () => openNewFileDialog());
   el.cancelNewFile.addEventListener("click", () => el.newFileDialog.close());
@@ -1824,6 +1853,8 @@ ${bodyHtml}
     if (state.renameTarget) renameEntry(state.renameTarget.path, state.renameTarget.kind, el.renameInput.value);
     state.renameTarget = null;
   });
+
+  el.closeDocBtn.addEventListener("click", closeDocument);
 
   el.renameCurrentBtn.addEventListener("click", () => {
     if (state.currentPath) openRenameDialog(state.currentPath, "file");

@@ -72,9 +72,10 @@
 
         <div class="empty-state" id="emptyState">
           <p class="empty-state-glyph">§</p>
-          <p class="empty-state-hint">No folder open yet.</p>
+          <p class="empty-state-hint" id="emptyStateHint">No folder open yet.</p>
           <div class="empty-state-actions">
             <button class="btn" id="emptyOpenBtn">Open folder</button>
+            <button class="btn" id="emptyNewFileBtn" hidden>New file</button>
             <button class="btn btn-quiet" id="emptyHelpBtn">What is this?</button>
           </div>
         </div>
@@ -91,6 +92,7 @@
               <button class="tab" id="tabSplit" data-view="split">Split</button>
             </div>
             <div class="doc-actions">
+              <button class="btn btn-icon" id="closeDocBtn" title="Close this file">✕</button>
               <button class="btn btn-quiet" id="renameCurrentBtn" title="Rename this file">Rename</button>
               <button class="btn btn-quiet" id="revealBtn" title="Show this file in the folder tree">Reveal</button>
               <button class="btn btn-quiet" id="exportPdfBtn" title="Export this file as PDF">Export PDF</button>
