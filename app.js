@@ -10,11 +10,12 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "1.0.1";
+  const APP_VERSION = "1.0.2";
 
   // ---------- DOM references ----------
 
   const el = {
+    app:           document.getElementById("app"),
     folderLabel:   document.getElementById("folderLabel"),
     openFolderBtn: document.getElementById("openFolderBtn"),
     emptyStateHint: document.getElementById("emptyStateHint"),
@@ -78,6 +79,8 @@
     renameExt:         document.getElementById("renameExt"),
     cancelRename:      document.getElementById("cancelRename"),
     closeDocBtn:       document.getElementById("closeDocBtn"),
+    zenToggleBtn:      document.getElementById("zenToggleBtn"),
+    zenExitBtn:        document.getElementById("zenExitBtn"),
     renameCurrentBtn:  document.getElementById("renameCurrentBtn"),
     revealBtn:         document.getElementById("revealBtn"),
     exportPdfBtn:      document.getElementById("exportPdfBtn"),
@@ -119,6 +122,7 @@
     quickOpenMatches: [],      // paths currently listed in the quick-open results
     quickOpenIndex: -1,        // index of the highlighted quick-open result
     splitPct: 50,               // editor's share of width in split view
+    zenMode: false,              // distraction-free writing mode
   };
 
   const isMarkdown = (name) => /\.(md|markdown)$/i.test(name);
@@ -989,6 +993,7 @@
     el.docView.hidden = true;
     el.emptyState.hidden = false;
     updateEmptyState();
+    if (state.zenMode) toggleZenMode();
   }
 
   async function deleteFile(path) {
@@ -1729,6 +1734,22 @@ ${bodyHtml}
     el.helpDialog.showModal();
   }
 
+  // ---------- Zen mode ----------
+  // Distraction-free writing: hides every piece of chrome except the
+  // editor/preview itself (see the .zen-mode CSS rules). There's nothing
+  // to focus on without a file open, so entering is a no-op then.
+
+  function toggleZenMode() {
+    if (!state.zenMode && !state.currentPath) {
+      showToast("Open a file first.");
+      return;
+    }
+    state.zenMode = !state.zenMode;
+    el.app.classList.toggle("zen-mode", state.zenMode);
+    el.zenExitBtn.hidden = !state.zenMode;
+    if (state.zenMode) el.editor.focus();
+  }
+
   // ---------- Footer folder path ----------
   // Browsers deliberately don't expose the real OS filesystem path for a
   // folder opened via the File System Access API (that would leak local
@@ -1855,6 +1876,8 @@ ${bodyHtml}
   });
 
   el.closeDocBtn.addEventListener("click", closeDocument);
+  el.zenToggleBtn.addEventListener("click", toggleZenMode);
+  el.zenExitBtn.addEventListener("click", toggleZenMode);
 
   el.renameCurrentBtn.addEventListener("click", () => {
     if (state.currentPath) openRenameDialog(state.currentPath, "file");
@@ -1964,10 +1987,18 @@ ${bodyHtml}
       e.preventDefault();
       saveCurrentFile();
     }
-    if (cmdOrCtrl && e.key.toLowerCase() === "f" && !el.workspace.classList.contains("sidebar-hidden")) {
+    if (cmdOrCtrl && e.shiftKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      toggleZenMode();
+    }
+    if (cmdOrCtrl && !e.shiftKey && e.key.toLowerCase() === "f" &&
+        !el.workspace.classList.contains("sidebar-hidden") && !state.zenMode) {
       e.preventDefault();
       el.searchInput.focus();
       el.searchInput.select();
+    }
+    if (e.key === "Escape" && state.zenMode && !document.querySelector("dialog[open]")) {
+      toggleZenMode();
     }
     if (document.activeElement === el.editor && cmdOrCtrl && e.key.toLowerCase() === "b") {
       e.preventDefault();

@@ -1,6 +1,15 @@
 ftnMDReader — Changelog
 =======================
 
+v1.0.2
+------
+- Added zen mode: a distraction-free writing view that hides the topbar,
+  sidebar, toolbar, doc header, and footer, leaving just the editor
+  (and preview, in Split/Preview) centered at a comfortable reading width.
+  Toggle with Ctrl/Cmd+Shift+F or the ⛶ button next to Rename; exit with
+  Esc, the same shortcut, or the small floating button in the corner.
+
+
 v1.0.1
 ------
 - Added this changelog, linked from the footer next to the version number.

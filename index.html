@@ -93,6 +93,7 @@
             </div>
             <div class="doc-actions">
               <button class="btn btn-icon" id="closeDocBtn" title="Close this file">✕</button>
+              <button class="btn btn-icon" id="zenToggleBtn" title="Zen mode (Ctrl/Cmd+Shift+F)">⛶</button>
               <button class="btn btn-quiet" id="renameCurrentBtn" title="Rename this file">Rename</button>
               <button class="btn btn-quiet" id="revealBtn" title="Show this file in the folder tree">Reveal</button>
               <button class="btn btn-quiet" id="exportPdfBtn" title="Export this file as PDF">Export PDF</button>
@@ -166,6 +167,9 @@
       </span>
     </footer>
   </div>
+
+  <!-- Floating exit affordance for zen mode -->
+  <button type="button" id="zenExitBtn" class="zen-exit-btn" hidden title="Exit zen mode (Esc)">✕ Zen</button>
 
   <!-- New file dialog -->
   <dialog id="newFileDialog">

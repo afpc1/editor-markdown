@@ -40,7 +40,8 @@
 .doc[hidden],
 .toolbar[hidden],
 .app-footer-folder[hidden],
-.dialog-ext[hidden] {
+.dialog-ext[hidden],
+.zen-exit-btn[hidden] {
   display: none;
 }
 
@@ -1176,10 +1177,46 @@ button:focus-visible,
   outline-offset: 2px;
 }
 
+#app.zen-mode .topbar,
+#app.zen-mode .reconnect-banner,
+#app.zen-mode .sidebar,
+#app.zen-mode .sidebar-resizer,
+#app.zen-mode .toolbar,
+#app.zen-mode .doc-head,
+#app.zen-mode .app-footer {
+  display: none;
+}
+#app.zen-mode .editor-wrap,
+#app.zen-mode .preview {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.zen-exit-btn {
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  z-index: 50;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0.55;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: opacity 120ms ease;
+}
+.zen-exit-btn:hover, .zen-exit-btn:focus-visible {
+  opacity: 1;
+}
+
 @media print {
   .topbar, .reconnect-banner, .sidebar, .sidebar-resizer,
   .doc-head, .toolbar, .doc-resizer, .editor-wrap,
-  .app-footer, .toast, dialog {
+  .app-footer, .toast, .zen-exit-btn, dialog {
     display: none !important;
   }
   .workspace, .editor-area, .doc-body, #docView {
