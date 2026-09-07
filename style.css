@@ -1101,6 +1101,12 @@ dialog::backdrop {
   flex: 1;
   justify-content: center;
 }
+.app-footer-version-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 
 #footerFolderPath {
   overflow: hidden;

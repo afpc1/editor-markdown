@@ -1,0 +1,34 @@
+ftnMDReader — Changelog
+=======================
+
+v1.0.1
+------
+- Added this changelog, linked from the footer next to the version number.
+
+
+v1.0.0
+------
+Initial release. Includes:
+
+- Open a local folder and browse its markdown files/folders in a tree sidebar
+- Create, rename, move, and delete files and folders
+- Drag and drop (or the "Move to folder…" picker) to move files between folders
+- Full markdown editor with live syntax highlighting and a formatting toolbar
+  (headings, bold/italic/strikethrough, lists, task lists, quotes, links,
+  images, tables, code blocks, horizontal rules)
+- Undo/redo fully integrated with the formatting toolbar, plus dirty-state
+  tracking that clears correctly when undoing back to the saved text
+- Edit / Preview / Split views, with a resizable divider in Split mode
+- Live-rendered preview with per-language code syntax highlighting
+  (highlight.js) and a one-click "Copy" button on code blocks
+- Filename search and optional full-text search across all files, plus a
+  quick-open command palette (Ctrl/Cmd+K)
+- Remembers the last opened folder between sessions (with a reconnect
+  prompt, since browsers require a fresh permission grant each session)
+- Resizable, collapsible sidebar
+- Export the current file to PDF (via the browser's print dialog) or to a
+  self-contained standalone HTML file
+- Folder path shown in the footer, with a copy-to-clipboard button
+- Keyboard shortcuts reference card (PDF), linked from the footer
+- Help modal with app info, accessible from the topbar or the empty state
+- A "Close" button to return to the empty state without opening another file
