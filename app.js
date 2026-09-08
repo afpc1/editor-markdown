@@ -10,7 +10,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "1.0.3";
+  const APP_VERSION = "1.0.4";
 
   // ---------- DOM references ----------
 
@@ -1376,6 +1376,79 @@ ${bodyHtml}
     }
   }
 
+  // setSelectionRange() alone doesn't reliably scroll a textarea to show
+  // the new caret position, so this estimates it from line height
+  // (matches .editor's CSS: font-size 14px, line-height 1.7) and sets
+  // scrollTop directly — which also fires the 'scroll' event that keeps
+  // the syntax-highlight overlay in sync.
+  function scrollEditorToPos(pos) {
+    const ta = el.editor;
+    const lineNumber = (ta.value.slice(0, pos).match(/\n/g) || []).length;
+    const lineHeight = 14 * 1.7;
+    const target = lineNumber * lineHeight - ta.clientHeight / 2 + lineHeight;
+    ta.scrollTop = Math.max(0, target);
+  }
+
+  // Ctrl/Cmd+D — with a selection, jumps to the next occurrence of the
+  // selected text (wrapping around the document); with no selection,
+  // selects the word under the cursor first. Textareas only support one
+  // selection at a time, so unlike VS Code/Sublime this can't add
+  // multiple simultaneous cursors — it's a "select next match" rather
+  // than true multi-cursor editing.
+  function selectNextOccurrence() {
+    const ta = el.editor;
+    const value = ta.value;
+    let start = ta.selectionStart;
+    let end = ta.selectionEnd;
+
+    if (start === end) {
+      const wordRe = /\w+/g;
+      let match;
+      while ((match = wordRe.exec(value))) {
+        if (match.index <= start && start <= match.index + match[0].length) {
+          start = match.index;
+          end = match.index + match[0].length;
+          break;
+        }
+      }
+      if (start === end) return; // cursor isn't within a word
+      ta.setSelectionRange(start, end);
+      scrollEditorToPos(start);
+      return;
+    }
+
+    const needle = value.slice(start, end);
+    if (!needle) return;
+
+    let idx = value.indexOf(needle, end);
+    if (idx === -1) idx = value.indexOf(needle, 0); // wrap around
+    if (idx === -1 || idx === start) return; // no other occurrence
+
+    ta.setSelectionRange(idx, idx + needle.length);
+    scrollEditorToPos(idx);
+  }
+
+  // Alt+Shift+ArrowDown — duplicates the current line, moving the
+  // cursor (or selection) down to the same column on the new copy.
+  function duplicateCurrentLine() {
+    const ta = el.editor;
+    const value = ta.value;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const { lineStart, lineEnd } = lineRange(value, start, end);
+    const lineText = value.slice(lineStart, lineEnd);
+
+    const newStart = lineEnd + 1 + (start - lineStart);
+    const newEnd = lineEnd + 1 + (end - lineStart);
+
+    replaceEditorRange(lineEnd, lineEnd, "\n" + lineText);
+    ta.setSelectionRange(newStart, newEnd);
+    scrollEditorToPos(newStart);
+    updateDirtyState();
+    updateHighlight();
+    if (state.view !== "edit") renderPreview();
+  }
+
   // ---------- Markdown rendering ----------
   // A small, dependency-free markdown-to-HTML renderer covering the
   // common subset: headings, emphasis, links, images, code, lists,
@@ -2029,6 +2102,14 @@ ${bodyHtml}
     if (document.activeElement === el.editor && cmdOrCtrl && e.key.toLowerCase() === "i") {
       e.preventDefault();
       applyFormatting("italic");
+    }
+    if (document.activeElement === el.editor && cmdOrCtrl && !e.shiftKey && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      selectNextOccurrence();
+    }
+    if (document.activeElement === el.editor && e.altKey && e.shiftKey && e.key === "ArrowDown") {
+      e.preventDefault();
+      duplicateCurrentLine();
     }
     if (cmdOrCtrl && e.key.toLowerCase() === "k") {
       e.preventDefault();

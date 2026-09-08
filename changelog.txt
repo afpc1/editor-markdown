@@ -1,6 +1,17 @@
 ftnMDReader — Changelog
 =======================
 
+v1.0.4
+------
+- Ctrl/Cmd+D: with text selected, jumps to the next occurrence of that
+  text (wraps to the start of the document); with no selection, selects
+  the word under the cursor first. Note: since a plain textarea only
+  supports one selection at a time, this is "select next match" rather
+  than true multi-cursor editing like VS Code/Sublime.
+- Alt+Shift+Down: duplicates the current line, moving the cursor (or
+  selection) down to the same position on the new copy.
+
+
 v1.0.3
 ------
 - Added dark mode: a 🌙/☀️ toggle in the topbar switches the whole app's
