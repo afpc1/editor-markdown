@@ -10,7 +10,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "1.0.2";
+  const APP_VERSION = "1.0.3";
 
   // ---------- DOM references ----------
 
@@ -49,6 +49,7 @@
     sidebarHead:        document.getElementById("sidebarHead"),
     sidebarResizer:     document.getElementById("sidebarResizer"),
     toggleSidebarBtn:   document.getElementById("toggleSidebarBtn"),
+    themeToggleBtn:     document.getElementById("themeToggleBtn"),
     helpBtn:            document.getElementById("helpBtn"),
     helpDialog:         document.getElementById("helpDialog"),
     helpCloseBtn:       document.getElementById("helpCloseBtn"),
@@ -1734,6 +1735,26 @@ ${bodyHtml}
     el.helpDialog.showModal();
   }
 
+  // ---------- Dark mode ----------
+  // The actual class is applied synchronously in <head> (see the inline
+  // script in index.html) to avoid a flash of the wrong theme before
+  // this script even loads. This just keeps the toggle button's icon in
+  // sync and persists future changes.
+
+  const THEME_KEY = "ftnMDReader:theme";
+
+  function applyThemeIcon() {
+    const isDark = document.documentElement.classList.contains("dark-mode");
+    el.themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
+    el.themeToggleBtn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+  }
+
+  function toggleTheme() {
+    const isDark = document.documentElement.classList.toggle("dark-mode");
+    try { localStorage.setItem(THEME_KEY, isDark ? "dark" : "light"); } catch {}
+    applyThemeIcon();
+  }
+
   // ---------- Zen mode ----------
   // Distraction-free writing: hides every piece of chrome except the
   // editor/preview itself (see the .zen-mode CSS rules). There's nothing
@@ -1949,6 +1970,7 @@ ${bodyHtml}
   });
 
   el.toggleSidebarBtn.addEventListener("click", toggleSidebar);
+  el.themeToggleBtn.addEventListener("click", toggleTheme);
   el.helpBtn.addEventListener("click", openHelpModal);
   el.helpCloseBtn.addEventListener("click", () => el.helpDialog.close());
   el.helpOpenFolderBtn.addEventListener("click", () => {
@@ -2020,6 +2042,7 @@ ${bodyHtml}
 
   setView("edit");
   el.appVersion.textContent = `v${APP_VERSION}`;
+  applyThemeIcon();
 
   if ("showDirectoryPicker" in window) {
     restoreLastFolder();

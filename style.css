@@ -26,10 +26,38 @@
   --line-soft: #EAE7DA;
   --teal: #1F6F5C;
   --teal-dark: #164F41;
+  --teal-fill: #1F6F5C;
+  --teal-fill-hover: #164F41;
   --gold: #B8862B;
+  --selected-bg: #E7F0EC;
+  --danger-bg: #FBEAEA;
+  --danger-text: #B3382C;
+  --highlight-yellow: #FBE7A1;
+  --banner-bg: #FBF3E1;
+  --banner-border: #E9D8AE;
   --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
   --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+html.dark-mode {
+  --paper: #1B1D18;
+  --panel: #23261F;
+  --ink: #EDEAD9;
+  --ink-soft: #9B9587;
+  --line: #3A3D33;
+  --line-soft: #2C2F27;
+  --teal: #3FA98C;
+  --teal-dark: #7FD9BE;
+  --teal-fill: #1D5F4E;
+  --teal-fill-hover: #24705C;
+  --gold: #D3A64C;
+  --selected-bg: #1E3730;
+  --danger-bg: #3A2320;
+  --danger-text: #E37A6E;
+  --highlight-yellow: #6B5A1E;
+  --banner-bg: #332B1A;
+  --banner-border: #4A3F26;
 }
 
 * {
@@ -108,8 +136,8 @@ button {
 }
 
 .btn {
-  border: 1px solid var(--teal);
-  background: var(--teal);
+  border: 1px solid var(--teal-fill);
+  background: var(--teal-fill);
   color: #fff;
   padding: 7px 14px;
   border-radius: 4px;
@@ -118,8 +146,8 @@ button {
   transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
 .btn:hover:not(:disabled) {
-  background: var(--teal-dark);
-  border-color: var(--teal-dark);
+  background: var(--teal-fill-hover);
+  border-color: var(--teal-fill-hover);
 }
 .btn:disabled {
   opacity: 0.4;
@@ -144,8 +172,8 @@ button {
   color: var(--ink);
 }
 .btn-danger:hover:not(:disabled) {
-  background: #FBEAEA;
-  color: #B3382C;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .reconnect-banner {
@@ -154,8 +182,8 @@ button {
   justify-content: space-between;
   gap: 16px;
   padding: 9px 18px;
-  background: #FBF3E1;
-  border-bottom: 1px solid #E9D8AE;
+  background: var(--banner-bg);
+  border-bottom: 1px solid var(--banner-border);
   color: var(--ink);
   font-size: 13px;
   flex-shrink: 0;
@@ -229,7 +257,7 @@ button {
   transition: background 100ms ease;
 }
 .sidebar-head.drop-target {
-  background: #E7F0EC;
+  background: var(--selected-bg);
   outline: 1.5px dashed var(--teal);
   outline-offset: -2px;
 }
@@ -343,7 +371,7 @@ button {
   background: var(--line-soft);
 }
 .item-row.drop-target {
-  background: #E7F0EC;
+  background: var(--selected-bg);
   outline: 1.5px dashed var(--teal);
   outline-offset: -1.5px;
 }
@@ -375,13 +403,13 @@ button {
   white-space: nowrap;
 }
 .item-row mark {
-  background: #FBE7A1;
+  background: var(--highlight-yellow);
   color: inherit;
   border-radius: 2px;
 }
 
 .file-item.selected > .item-row {
-  background: #E7F0EC;
+  background: var(--selected-bg);
   color: var(--teal-dark);
 }
 
@@ -414,12 +442,12 @@ button {
   border-radius: 3px;
 }
 .row-action:hover {
-  background: #E7F0EC;
+  background: var(--selected-bg);
   color: var(--teal-dark);
 }
 .row-action-danger:hover {
-  background: #FBEAEA;
-  color: #B3382C;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .snippet,
@@ -447,7 +475,7 @@ button {
 
 @keyframes flash-highlight {
   0% {
-    background: #FBE7A1;
+    background: var(--highlight-yellow);
   }
   100% {
     background: transparent;
@@ -645,7 +673,7 @@ button {
   border-color: var(--line);
 }
 .toolbar-btn:active {
-  background: #E7F0EC;
+  background: var(--selected-bg);
   color: var(--teal-dark);
 }
 
@@ -897,8 +925,8 @@ button {
   background: rgba(255, 255, 255, 0.18);
 }
 .copy-code-btn.copied {
-  background: var(--teal);
-  border-color: var(--teal);
+  background: var(--teal-fill);
+  border-color: var(--teal-fill);
   opacity: 1;
 }
 
@@ -987,7 +1015,7 @@ dialog::backdrop {
   white-space: nowrap;
 }
 .quick-open-item:hover, .quick-open-item.active {
-  background: #E7F0EC;
+  background: var(--selected-bg);
   color: var(--teal-dark);
 }
 
@@ -1059,7 +1087,8 @@ dialog::backdrop {
   font-family: var(--mono);
   font-size: 13px;
   outline: none;
-  background: #fff;
+  background: var(--panel);
+  color: var(--ink);
 }
 #moveFileTarget:focus {
   border-color: var(--teal);

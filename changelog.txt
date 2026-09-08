@@ -1,6 +1,15 @@
 ftnMDReader — Changelog
 =======================
 
+v1.0.3
+------
+- Added dark mode: a 🌙/☀️ toggle in the topbar switches the whole app's
+  palette. The saved preference is applied before first paint (no flash
+  of the wrong theme), and code blocks in Preview/export stay their
+  usual dark treatment regardless of the app theme. All color pairings
+  were checked against WCAG contrast minimums.
+
+
 v1.0.2
 ------
 - Added zen mode: a distraction-free writing view that hides the topbar,

@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ftnMDReader — a folder of markdown</title>
+<script>
+  // Applied synchronously, before the stylesheet paints anything, so
+  // there's no flash of the light theme before this runs. Kept tiny and
+  // dependency-free on purpose — app.js loads much later, after parsing
+  // the whole page.
+  try {
+    if (localStorage.getItem("ftnMDReader:theme") === "dark") {
+      document.documentElement.classList.add("dark-mode");
+    }
+  } catch (e) {}
+</script>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
 </head>
@@ -27,6 +38,7 @@
         <button class="btn" id="openFolderBtn" title="Open a folder from your computer">Open folder</button>
         <button class="btn btn-quiet" id="newFileBtn" disabled title="Create a new markdown file">New file</button>
         <button class="btn btn-quiet" id="newFolderBtn" disabled title="Create a new subfolder">New folder</button>
+        <button class="btn btn-icon" id="themeToggleBtn" title="Toggle dark mode">🌙</button>
         <button class="btn btn-icon" id="helpBtn" title="About & help">?</button>
       </div>
     </header>
