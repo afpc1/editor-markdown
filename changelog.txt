@@ -1,6 +1,28 @@
 ftnMDReader — Changelog
 =======================
 
+v1.0.5
+------
+- Replaced the plain <textarea> editor with CodeMirror 6, loaded from a
+  CDN. This is a bigger change under the hood than it looks:
+  * Ctrl/Cmd+D is now TRUE multi-select — repeat it to select and edit
+    several occurrences at once, not just jump to the next one.
+  * Tab / Shift+Tab now indent and unindent, which plain <textarea>s
+    never supported (Tab used to just move focus away).
+  * Syntax highlighting in Edit mode now runs on a real markdown parser
+    instead of the old regex-based approximation — handles nested
+    formatting and edge cases far more reliably.
+  * Undo/redo, line wrapping, and Alt+Shift+Down (duplicate line) all
+    still work as before, just backed by CodeMirror's own commands now.
+  Known trade-off: the editor itself now depends on that CDN load
+  succeeding (previously only Preview's code-block coloring did). If
+  it can't be reached, editing still works via an automatic plain-
+  textarea fallback, just without syntax highlighting or multi-select.
+  Also, task-list checkboxes ("- [ ]" vs "- [x]") no longer get a
+  distinct checked/unchecked color in Edit mode — a minor cosmetic
+  regression versus the old hand-rolled highlighter.
+
+
 v1.0.4
 ------
 - Ctrl/Cmd+D: with text selected, jumps to the next occurrence of that

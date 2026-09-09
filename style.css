@@ -698,95 +698,37 @@ button {
   min-width: 0;
   overflow: hidden;
   background: var(--panel);
+  display: flex;
+  flex-direction: column;
 }
 
-.editor,
-.editor-highlight {
-  position: absolute;
-  inset: 0;
+.cm-mount {
+  flex: 1;
+  min-height: 0;
+}
+
+.cm-editor {
+  height: 100%;
+}
+
+.editor-fallback {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  border: none;
+  outline: none;
   margin: 0;
   padding: 24px 28px;
   font-family: var(--mono);
   font-size: 14px;
   line-height: 1.7;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  box-sizing: border-box;
-}
-
-.editor {
-  resize: none;
-  border: none;
-  outline: none;
   background: transparent;
-  color: transparent;
+  color: var(--ink);
   caret-color: var(--ink);
-  overflow-y: auto;
-  z-index: 1;
 }
-.editor::placeholder {
+.editor-fallback::placeholder {
   color: var(--ink-soft);
   opacity: 0.6;
-}
-
-.editor-highlight {
-  overflow: hidden;
-  color: var(--ink);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.tok-heading {
-  color: var(--teal-dark);
-  font-weight: 700;
-}
-.tok-bold {
-  font-weight: 700;
-}
-.tok-italic {
-  font-style: italic;
-}
-.tok-strike {
-  color: var(--ink-soft);
-  text-decoration: line-through;
-}
-.tok-code {
-  color: #A24E2A;
-  background: rgba(184, 134, 43, 0.14);
-}
-.tok-link {
-  color: var(--teal-dark);
-  text-decoration: underline;
-}
-.tok-quote-marker {
-  color: var(--teal);
-  font-weight: 700;
-}
-.tok-quote {
-  color: var(--ink-soft);
-  font-style: italic;
-}
-.tok-list-marker {
-  color: var(--teal);
-  font-weight: 700;
-}
-.tok-task-checked {
-  color: var(--gold);
-  font-weight: 700;
-}
-.tok-task-unchecked {
-  color: var(--ink-soft);
-  font-weight: 700;
-}
-.tok-hr {
-  color: var(--ink-soft);
-}
-.tok-fence {
-  color: var(--ink-soft);
-}
-.tok-code-line {
-  color: #A24E2A;
 }
 
 .preview {
@@ -1190,7 +1132,7 @@ dialog::backdrop {
   .doc-resizer {
     display: none;
   }
-  .editor, .preview {
+  .editor-fallback, .preview {
     padding: 16px;
   }
 }

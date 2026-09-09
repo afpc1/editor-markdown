@@ -7,10 +7,10 @@
    read and write goes straight through the browser to disk.
 --------------------------------------------------------- */
 
-(() => {
+(async () => {
   "use strict";
 
-  const APP_VERSION = "1.0.4";
+  const APP_VERSION = "1.0.5";
 
   // ---------- DOM references ----------
 
@@ -32,8 +32,7 @@
     docBody:       document.getElementById("docBody"),
     docResizer:    document.getElementById("docResizer"),
     editorWrap:    document.getElementById("editorWrap"),
-    editorHighlight: document.getElementById("editorHighlight"),
-    editor:        document.getElementById("editor"),
+    editorMount:   document.getElementById("editorMount"),
     preview:       document.getElementById("preview"),
     saveBtn:       document.getElementById("saveBtn"),
     tabEdit:       document.getElementById("tabEdit"),
@@ -129,6 +128,197 @@
   const isMarkdown = (name) => /\.(md|markdown)$/i.test(name);
   const basename = (path) => path.split("/").pop();
   const joinPath = (parentPath, name) => (parentPath ? `${parentPath}/${name}` : name);
+
+  // ---------- Editor engine (CodeMirror 6) ----------
+  // Loaded from a CDN as ES modules — there's no bundler in this project,
+  // so this is the same pattern already used for highlight.js, just for
+  // something more central this time. `el.editor` below is built as a
+  // small compatibility shim exposing the handful of plain-<textarea>
+  // properties the rest of this file already uses (value, selectionStart/
+  // End, setSelectionRange, focus, an 'input' listener) — so everything
+  // downstream (open/save/export, the formatting toolbar's range math,
+  // dirty tracking) keeps working unchanged, while CodeMirror itself
+  // handles real editing: multi-selection, undo history, a proper
+  // markdown parser for syntax colors, line wrapping, etc.
+  //
+  // If the CDN can't be reached, this falls back to a plain <textarea>
+  // wired to the same shim interface — no syntax highlighting, but the
+  // app still opens, edits, and saves files.
+
+  let cmView = null; // the live CodeMirror EditorView, once loaded
+  const editorInputListeners = [];
+  const fireEditorInput = () => editorInputListeners.forEach((fn) => fn());
+
+  function buildEditorShimFromCM() {
+    return {
+      get value() { return cmView.state.doc.toString(); },
+      set value(text) {
+        cmView.dispatch({
+          changes: { from: 0, to: cmView.state.doc.length, insert: text },
+          selection: { anchor: 0 },
+        });
+      },
+      get selectionStart() { return cmView.state.selection.main.from; },
+      get selectionEnd() { return cmView.state.selection.main.to; },
+      setSelectionRange(start, end) {
+        cmView.dispatch({ selection: { anchor: start, head: end }, scrollIntoView: true });
+      },
+      focus() { cmView.focus(); },
+      addEventListener(type, handler) {
+        if (type === "input") editorInputListeners.push(handler);
+      },
+    };
+  }
+
+  // Applies a single [rangeStart, rangeEnd) replacement plus a resulting
+  // selection, in one atomic step. This is what the formatting toolbar's
+  // range math (wrapSelection/prefixLines/etc., further down) is applied
+  // through — routed as a real CodeMirror transaction (undoable) when
+  // available, or a direct value edit on the fallback textarea otherwise.
+  function dispatchEditorChange(rangeStart, rangeEnd, replacement, selStart, selEnd) {
+    if (cmView) {
+      cmView.dispatch({
+        changes: { from: rangeStart, to: rangeEnd, insert: replacement },
+        selection: { anchor: selStart, head: selEnd },
+        scrollIntoView: true,
+      });
+      cmView.focus();
+    } else if (el.editor) {
+      const value = el.editor.value;
+      el.editor.value = value.slice(0, rangeStart) + replacement + value.slice(rangeEnd);
+      el.editor.setSelectionRange(selStart, selEnd);
+      el.editor.focus();
+      fireEditorInput();
+    }
+  }
+
+  async function setupCodeMirror() {
+    try {
+      const [
+        { EditorState },
+        { EditorView, keymap, placeholder },
+        commands,
+        { markdown },
+        { syntaxHighlighting, HighlightStyle },
+        search,
+        { tags: t },
+      ] = await Promise.all([
+        import("https://esm.sh/@codemirror/state@6"),
+        import("https://esm.sh/@codemirror/view@6"),
+        import("https://esm.sh/@codemirror/commands@6"),
+        import("https://esm.sh/@codemirror/lang-markdown@6"),
+        import("https://esm.sh/@codemirror/language@6"),
+        import("https://esm.sh/@codemirror/search@6"),
+        import("https://esm.sh/@lezer/highlight@1"),
+      ]);
+
+      // Mirrors the app's --tok-* palette from style.scss, but through
+      // CodeMirror's own markdown parser instead of our old regex-based
+      // one — handles nesting, edge cases, etc. far more reliably.
+      const mdHighlightStyle = HighlightStyle.define([
+        { tag: [t.heading1, t.heading2, t.heading3, t.heading4, t.heading5, t.heading6],
+          color: "var(--teal-dark)", fontWeight: "700" },
+        { tag: t.strong, fontWeight: "700" },
+        { tag: t.emphasis, fontStyle: "italic" },
+        { tag: t.strikethrough, color: "var(--ink-soft)", textDecoration: "line-through" },
+        { tag: t.monospace, color: "#A24E2A", backgroundColor: "rgba(184, 134, 43, 0.14)" },
+        { tag: [t.link, t.url], color: "var(--teal-dark)", textDecoration: "underline" },
+        { tag: t.quote, color: "var(--ink-soft)", fontStyle: "italic" },
+        { tag: t.list, color: "var(--teal)", fontWeight: "700" },
+        { tag: t.contentSeparator, color: "var(--ink-soft)" },
+        { tag: t.processingInstruction, color: "var(--ink-soft)" },
+        { tag: t.meta, color: "var(--ink-soft)" },
+      ]);
+
+      const editorTheme = EditorView.theme({
+        "&": { height: "100%", backgroundColor: "var(--panel)", color: "var(--ink)" },
+        "&.cm-focused": { outline: "none" },
+        ".cm-content": {
+          fontFamily: "var(--mono)", fontSize: "14px", lineHeight: "1.7",
+          padding: "24px 28px", caretColor: "var(--ink)",
+        },
+        ".cm-scroller": { fontFamily: "var(--mono)" },
+        ".cm-cursor": { borderLeftColor: "var(--ink)" },
+        ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+          backgroundColor: "var(--selected-bg) !important",
+        },
+        ".cm-placeholder": { color: "var(--ink-soft)", opacity: "0.6" },
+      });
+
+      // Our own bindings take priority (listed first); Tab/Shift-Tab
+      // indentation, Mod-z/Mod-y undo/redo, and general editing keys
+      // (word-wise movement, select-all, etc.) come from CodeMirror's
+      // own defaults. Deliberately no Mod-f binding here — that's the
+      // sidebar file-search shortcut at the app level (see the global
+      // keydown handler below), not a per-document find/replace.
+      const ourKeymap = [
+        { key: "Mod-b", run: () => { applyFormatting("bold"); return true; }, preventDefault: true },
+        { key: "Mod-i", run: () => { applyFormatting("italic"); return true; }, preventDefault: true },
+        { key: "Mod-d", run: search.selectNextOccurrence, preventDefault: true },
+        { key: "Alt-Shift-ArrowDown", run: commands.copyLineDown, preventDefault: true },
+        commands.indentWithTab,
+      ];
+
+      const extensions = [
+        keymap.of([...ourKeymap, ...commands.historyKeymap, ...commands.defaultKeymap]),
+        commands.history(),
+        markdown(),
+        syntaxHighlighting(mdHighlightStyle),
+        EditorView.lineWrapping,
+        placeholder("Start writing…"),
+        EditorView.contentAttributes.of({ spellcheck: "false", autocorrect: "off", autocapitalize: "off" }),
+        editorTheme,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) fireEditorInput();
+        }),
+      ];
+
+      cmView = new EditorView({
+        state: EditorState.create({ doc: "", extensions }),
+        parent: el.editorMount,
+      });
+
+      el.editor = buildEditorShimFromCM();
+
+      // Toolbar Undo/Redo buttons route through here (see applyFormatting).
+      el.editor._undo = () => { commands.undo(cmView); cmView.focus(); };
+      el.editor._redo = () => { commands.redo(cmView); cmView.focus(); };
+    } catch (err) {
+      console.error("Couldn't load the CodeMirror editor from the CDN:", err);
+      setupFallbackTextarea();
+    }
+  }
+
+  // Minimal fallback if the CDN is unreachable: a plain <textarea> wired
+  // to the same shim interface. No syntax highlighting or multi-select,
+  // but files can still be opened, edited, and saved.
+  function setupFallbackTextarea() {
+    const ta = document.createElement("textarea");
+    ta.className = "editor-fallback";
+    ta.spellcheck = false;
+    ta.placeholder = "Start writing…";
+    el.editorMount.innerHTML = "";
+    el.editorMount.appendChild(ta);
+
+    ta.addEventListener("input", fireEditorInput);
+    ta.value = "";
+
+    el.editor = {
+      get value() { return ta.value; },
+      set value(text) { ta.value = text; },
+      get selectionStart() { return ta.selectionStart; },
+      get selectionEnd() { return ta.selectionEnd; },
+      setSelectionRange(start, end) { ta.setSelectionRange(start, end); },
+      focus() { ta.focus(); },
+      addEventListener(type, handler) {
+        if (type === "input") editorInputListeners.push(handler);
+      },
+      _undo() { document.execCommand("undo"); },
+      _redo() { document.execCommand("redo"); },
+    };
+  }
+
+  await setupCodeMirror();
 
   // ---------- Persisting the last folder (IndexedDB) ----------
   // FileSystemDirectoryHandle objects are structured-cloneable, so they
@@ -581,7 +771,6 @@
       state.savedValue = text;
 
       el.editor.value = text;
-      updateHighlight();
       el.docName.textContent = info.name;
       el.docName.title = path;
       el.docDirty.hidden = true;
@@ -990,7 +1179,6 @@
     state.savedValue = "";
     state.dirty = false;
     el.editor.value = "";
-    updateHighlight();
     el.docView.hidden = true;
     el.emptyState.hidden = false;
     updateEmptyState();
@@ -1269,10 +1457,11 @@ ${bodyHtml}
 
   // ---------- Formatting toolbar ----------
   // Each action describes an edit as "replace this range with this text"
-  // rather than building the whole new document string. Applying it via
-  // document.execCommand("insertText", …) — instead of just assigning
-  // textarea.value — keeps the edit on the browser's native undo/redo
-  // stack, so Ctrl/Cmd+Z works for toolbar actions exactly like typing.
+  // rather than building the whole new document string. It's applied via
+  // dispatchEditorChange() (defined above, near the editor setup), as a
+  // single CodeMirror transaction — which is what keeps it on the native
+  // undo/redo stack, so Ctrl/Cmd+Z works for toolbar actions exactly like
+  // typing.
 
   function wrapSelection(value, start, end, before, after, placeholder) {
     const hasSelection = end > start;
@@ -1321,8 +1510,8 @@ ${bodyHtml}
     let result;
 
     switch (action) {
-      case "undo": ta.focus(); document.execCommand("undo"); return;
-      case "redo": ta.focus(); document.execCommand("redo"); return;
+      case "undo": ta._undo(); return;
+      case "redo": ta._redo(); return;
       case "h1": result = setHeading(value, start, end, 1); break;
       case "h2": result = setHeading(value, start, end, 2); break;
       case "h3": result = setHeading(value, start, end, 3); break;
@@ -1356,96 +1545,8 @@ ${bodyHtml}
       default: return;
     }
 
-    replaceEditorRange(result.rangeStart, result.rangeEnd, result.replacement);
-    ta.setSelectionRange(result.selStart, result.selEnd);
+    dispatchEditorChange(result.rangeStart, result.rangeEnd, result.replacement, result.selStart, result.selEnd);
     updateDirtyState();
-    if (state.view !== "edit") renderPreview();
-  }
-
-  // Selects [rangeStart, rangeEnd] and replaces it via execCommand so the
-  // edit lands on the native undo stack. Falls back to a direct value
-  // assignment (not undoable) only if execCommand is unsupported.
-  function replaceEditorRange(rangeStart, rangeEnd, replacement) {
-    const ta = el.editor;
-    ta.focus();
-    ta.setSelectionRange(rangeStart, rangeEnd);
-    const applied = document.execCommand("insertText", false, replacement);
-    if (!applied) {
-      const value = ta.value;
-      ta.value = value.slice(0, rangeStart) + replacement + value.slice(rangeEnd);
-    }
-  }
-
-  // setSelectionRange() alone doesn't reliably scroll a textarea to show
-  // the new caret position, so this estimates it from line height
-  // (matches .editor's CSS: font-size 14px, line-height 1.7) and sets
-  // scrollTop directly — which also fires the 'scroll' event that keeps
-  // the syntax-highlight overlay in sync.
-  function scrollEditorToPos(pos) {
-    const ta = el.editor;
-    const lineNumber = (ta.value.slice(0, pos).match(/\n/g) || []).length;
-    const lineHeight = 14 * 1.7;
-    const target = lineNumber * lineHeight - ta.clientHeight / 2 + lineHeight;
-    ta.scrollTop = Math.max(0, target);
-  }
-
-  // Ctrl/Cmd+D — with a selection, jumps to the next occurrence of the
-  // selected text (wrapping around the document); with no selection,
-  // selects the word under the cursor first. Textareas only support one
-  // selection at a time, so unlike VS Code/Sublime this can't add
-  // multiple simultaneous cursors — it's a "select next match" rather
-  // than true multi-cursor editing.
-  function selectNextOccurrence() {
-    const ta = el.editor;
-    const value = ta.value;
-    let start = ta.selectionStart;
-    let end = ta.selectionEnd;
-
-    if (start === end) {
-      const wordRe = /\w+/g;
-      let match;
-      while ((match = wordRe.exec(value))) {
-        if (match.index <= start && start <= match.index + match[0].length) {
-          start = match.index;
-          end = match.index + match[0].length;
-          break;
-        }
-      }
-      if (start === end) return; // cursor isn't within a word
-      ta.setSelectionRange(start, end);
-      scrollEditorToPos(start);
-      return;
-    }
-
-    const needle = value.slice(start, end);
-    if (!needle) return;
-
-    let idx = value.indexOf(needle, end);
-    if (idx === -1) idx = value.indexOf(needle, 0); // wrap around
-    if (idx === -1 || idx === start) return; // no other occurrence
-
-    ta.setSelectionRange(idx, idx + needle.length);
-    scrollEditorToPos(idx);
-  }
-
-  // Alt+Shift+ArrowDown — duplicates the current line, moving the
-  // cursor (or selection) down to the same column on the new copy.
-  function duplicateCurrentLine() {
-    const ta = el.editor;
-    const value = ta.value;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const { lineStart, lineEnd } = lineRange(value, start, end);
-    const lineText = value.slice(lineStart, lineEnd);
-
-    const newStart = lineEnd + 1 + (start - lineStart);
-    const newEnd = lineEnd + 1 + (end - lineStart);
-
-    replaceEditorRange(lineEnd, lineEnd, "\n" + lineText);
-    ta.setSelectionRange(newStart, newEnd);
-    scrollEditorToPos(newStart);
-    updateDirtyState();
-    updateHighlight();
     if (state.view !== "edit") renderPreview();
   }
 
@@ -1540,81 +1641,6 @@ ${bodyHtml}
     return str.replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
-  }
-
-  // ---------- Editor syntax highlighting ----------
-  // Renders the same text as the textarea, but with markdown syntax
-  // colored per convention. Unlike the preview renderer, this must keep
-  // every original character (including the markdown punctuation) so the
-  // overlay lines up exactly with the transparent textarea on top of it —
-  // it only ever wraps runs of text in <span> elements, never removes or
-  // replaces characters.
-
-  function highlightInline(text) {
-    let out = escapeHtml(text);
-    out = out.replace(/(`[^`]+`)/g, '<span class="tok-code">$1</span>');
-    out = out.replace(/(!\[[^\]]*\]\([^)\s]+\))/g, '<span class="tok-link">$1</span>');
-    out = out.replace(/(\[[^\]]+\]\([^)\s]+\))/g, '<span class="tok-link">$1</span>');
-    out = out.replace(/(\*\*[^*]+\*\*)/g, '<span class="tok-bold">$1</span>');
-    out = out.replace(/(__[^_]+__)/g, '<span class="tok-bold">$1</span>');
-    out = out.replace(/(\*[^*]+\*)/g, '<span class="tok-italic">$1</span>');
-    out = out.replace(/(?<!_)(_[^_]+_)(?!_)/g, '<span class="tok-italic">$1</span>');
-    out = out.replace(/(~~[^~]+~~)/g, '<span class="tok-strike">$1</span>');
-    return out;
-  }
-
-  function highlightMarkdown(src) {
-    let inFence = false;
-
-    const lines = src.split("\n").map((line) => {
-      if (/^\s*```/.test(line)) {
-        inFence = !inFence;
-        return `<span class="tok-fence">${escapeHtml(line)}</span>`;
-      }
-      if (inFence) {
-        return `<span class="tok-code-line">${escapeHtml(line)}</span>`;
-      }
-      if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) {
-        return `<span class="tok-hr">${escapeHtml(line)}</span>`;
-      }
-
-      const heading = line.match(/^(#{1,6}\s+)(.*)$/);
-      if (heading) {
-        return `<span class="tok-heading">${escapeHtml(heading[1])}${highlightInline(heading[2])}</span>`;
-      }
-
-      const quote = line.match(/^(\s*>\s?)(.*)$/);
-      if (quote) {
-        return `<span class="tok-quote-marker">${escapeHtml(quote[1])}</span>` +
-               `<span class="tok-quote">${highlightInline(quote[2])}</span>`;
-      }
-
-      const task = line.match(/^(\s*[-*+]\s+)(\[[ xX]\])(\s*)(.*)$/);
-      if (task) {
-        const checked = /[xX]/.test(task[2]);
-        return `<span class="tok-list-marker">${escapeHtml(task[1])}</span>` +
-               `<span class="${checked ? "tok-task-checked" : "tok-task-unchecked"}">${escapeHtml(task[2])}</span>` +
-               `${escapeHtml(task[3])}${highlightInline(task[4])}`;
-      }
-
-      const ul = line.match(/^(\s*[-*+]\s+)(.*)$/);
-      if (ul) {
-        return `<span class="tok-list-marker">${escapeHtml(ul[1])}</span>${highlightInline(ul[2])}`;
-      }
-
-      const ol = line.match(/^(\s*\d+\.\s+)(.*)$/);
-      if (ol) {
-        return `<span class="tok-list-marker">${escapeHtml(ol[1])}</span>${highlightInline(ol[2])}`;
-      }
-
-      return highlightInline(line);
-    });
-
-    return lines.join("\n");
-  }
-
-  function updateHighlight() {
-    el.editorHighlight.innerHTML = highlightMarkdown(el.editor.value);
   }
 
   function inline(text) {
@@ -2058,13 +2084,7 @@ ${bodyHtml}
 
   el.editor.addEventListener("input", () => {
     updateDirtyState();
-    updateHighlight();
     if (state.view !== "edit") renderPreview();
-  });
-
-  el.editor.addEventListener("scroll", () => {
-    el.editorHighlight.scrollTop = el.editor.scrollTop;
-    el.editorHighlight.scrollLeft = el.editor.scrollLeft;
   });
 
   el.tabEdit.addEventListener("click", () => setView("edit"));
@@ -2094,22 +2114,6 @@ ${bodyHtml}
     }
     if (e.key === "Escape" && state.zenMode && !document.querySelector("dialog[open]")) {
       toggleZenMode();
-    }
-    if (document.activeElement === el.editor && cmdOrCtrl && e.key.toLowerCase() === "b") {
-      e.preventDefault();
-      applyFormatting("bold");
-    }
-    if (document.activeElement === el.editor && cmdOrCtrl && e.key.toLowerCase() === "i") {
-      e.preventDefault();
-      applyFormatting("italic");
-    }
-    if (document.activeElement === el.editor && cmdOrCtrl && !e.shiftKey && e.key.toLowerCase() === "d") {
-      e.preventDefault();
-      selectNextOccurrence();
-    }
-    if (document.activeElement === el.editor && e.altKey && e.shiftKey && e.key === "ArrowDown") {
-      e.preventDefault();
-      duplicateCurrentLine();
     }
     if (cmdOrCtrl && e.key.toLowerCase() === "k") {
       e.preventDefault();
