@@ -10,7 +10,7 @@
 (async () => {
   "use strict";
 
-  const APP_VERSION = "1.0.5";
+  const APP_VERSION = "1.0.6";
 
   // ---------- DOM references ----------
 
@@ -29,6 +29,7 @@
     docView:       document.getElementById("docView"),
     docName:       document.getElementById("docName"),
     docDirty:      document.getElementById("docDirty"),
+    cursorPos:     document.getElementById("cursorPos"),
     docBody:       document.getElementById("docBody"),
     docResizer:    document.getElementById("docResizer"),
     editorWrap:    document.getElementById("editorWrap"),
@@ -170,6 +171,24 @@
     };
   }
 
+  // Updates the "Ln 12, Col 4" indicator in the doc header. Works against
+  // either CodeMirror (fast path, via its own line lookup) or the plain
+  // fallback textarea (slower manual count, but that path is only ever
+  // used when the CDN is unreachable).
+  function updateCursorPos() {
+    if (!el.cursorPos || !el.editor) return;
+
+    if (cmView) {
+      const pos = cmView.state.selection.main.head;
+      const line = cmView.state.doc.lineAt(pos);
+      el.cursorPos.textContent = `Ln ${line.number}, Col ${pos - line.from + 1}`;
+    } else {
+      const before = el.editor.value.slice(0, el.editor.selectionStart);
+      const lines = before.split("\n");
+      el.cursorPos.textContent = `Ln ${lines.length}, Col ${lines[lines.length - 1].length + 1}`;
+    }
+  }
+
   // Applies a single [rangeStart, rangeEnd) replacement plus a resulting
   // selection, in one atomic step. This is what the formatting toolbar's
   // range math (wrapSelection/prefixLines/etc., further down) is applied
@@ -196,7 +215,7 @@
     try {
       const [
         { EditorState },
-        { EditorView, keymap, placeholder },
+        { EditorView, keymap, placeholder, highlightActiveLine },
         commands,
         { markdown },
         { syntaxHighlighting, HighlightStyle },
@@ -242,6 +261,7 @@
         ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
           backgroundColor: "var(--selected-bg) !important",
         },
+        ".cm-activeLine": { backgroundColor: "var(--line-soft)" },
         ".cm-placeholder": { color: "var(--ink-soft)", opacity: "0.6" },
       });
 
@@ -264,12 +284,14 @@
         commands.history(),
         markdown(),
         syntaxHighlighting(mdHighlightStyle),
+        highlightActiveLine(),
         EditorView.lineWrapping,
         placeholder("Start writing…"),
         EditorView.contentAttributes.of({ spellcheck: "false", autocorrect: "off", autocapitalize: "off" }),
         editorTheme,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) fireEditorInput();
+          if (update.docChanged || update.selectionSet) updateCursorPos();
         }),
       ];
 
@@ -301,6 +323,9 @@
     el.editorMount.appendChild(ta);
 
     ta.addEventListener("input", fireEditorInput);
+    ta.addEventListener("input", updateCursorPos);
+    ta.addEventListener("click", updateCursorPos);
+    ta.addEventListener("keyup", updateCursorPos);
     ta.value = "";
 
     el.editor = {
@@ -771,6 +796,7 @@
       state.savedValue = text;
 
       el.editor.value = text;
+      updateCursorPos();
       el.docName.textContent = info.name;
       el.docName.title = path;
       el.docDirty.hidden = true;
@@ -1179,6 +1205,7 @@
     state.savedValue = "";
     state.dirty = false;
     el.editor.value = "";
+    updateCursorPos();
     el.docView.hidden = true;
     el.emptyState.hidden = false;
     updateEmptyState();
@@ -1451,6 +1478,7 @@ ${bodyHtml}
       tab.classList.toggle("active", name === view);
     }
     el.toolbar.hidden = view === "preview";
+    el.cursorPos.hidden = view === "preview";
     el.editorWrap.style.flex = view === "split" ? `0 0 ${state.splitPct}%` : "";
     if (view !== "edit") renderPreview();
   }

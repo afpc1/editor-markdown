@@ -1,6 +1,15 @@
 ftnMDReader — Changelog
 =======================
 
+v1.0.6
+------
+- Added a cursor position indicator ("Ln 12, Col 4") next to the
+  filename, updating live as you type or move around — hidden in
+  Preview-only mode since there's no cursor to show there.
+- The current line is now subtly highlighted in the editor, making it
+  easier to keep your place in longer files.
+
+
 v1.0.5
 ------
 - Replaced the plain <textarea> editor with CodeMirror 6, loaded from a
