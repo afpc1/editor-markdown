@@ -10,7 +10,7 @@
 (async () => {
   "use strict";
 
-  const APP_VERSION = "1.0.6";
+  const APP_VERSION = "1.0.8";
 
   // ---------- DOM references ----------
 
@@ -215,7 +215,7 @@
     try {
       const [
         { EditorState },
-        { EditorView, keymap, placeholder, highlightActiveLine },
+        { EditorView, keymap, placeholder, highlightActiveLine, lineNumbers, highlightActiveLineGutter },
         commands,
         { markdown },
         { syntaxHighlighting, HighlightStyle },
@@ -263,6 +263,21 @@
         },
         ".cm-activeLine": { backgroundColor: "var(--line-soft)" },
         ".cm-placeholder": { color: "var(--ink-soft)", opacity: "0.6" },
+        ".cm-gutters": {
+          backgroundColor: "var(--panel)",
+          color: "var(--ink-soft)",
+          border: "none",
+          borderRight: "1px solid var(--line)",
+        },
+        ".cm-lineNumbers .cm-gutterElement": {
+          padding: "0 10px 0 14px",
+          fontFamily: "var(--mono)",
+          fontSize: "12px",
+        },
+        ".cm-activeLineGutter": {
+          backgroundColor: "var(--line-soft)",
+          color: "var(--ink)",
+        },
       });
 
       // Our own bindings take priority (listed first); Tab/Shift-Tab
@@ -285,6 +300,8 @@
         markdown(),
         syntaxHighlighting(mdHighlightStyle),
         highlightActiveLine(),
+        lineNumbers(),
+        highlightActiveLineGutter(),
         EditorView.lineWrapping,
         placeholder("Start writing…"),
         EditorView.contentAttributes.of({ spellcheck: "false", autocorrect: "off", autocapitalize: "off" }),

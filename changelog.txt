@@ -1,6 +1,21 @@
 ftnMDReader — Changelog
 =======================
 
+v1.0.8
+------
+- Moved line numbers to the left (their usual position) — v1.0.7 put
+  them on the right by mistake.
+
+
+v1.0.7
+------
+- Added line numbers in Edit mode, placed on the right edge of the
+  editor (CodeMirror puts them on the left by default; moved here via
+  a flex-order override). The active line's number is highlighted too,
+  matching the active-line highlight added last version. Not available
+  in the plain-textarea fallback if the CodeMirror CDN is unreachable.
+
+
 v1.0.6
 ------
 - Added a cursor position indicator ("Ln 12, Col 4") next to the
