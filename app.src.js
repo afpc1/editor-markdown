@@ -1,0 +1,2174 @@
+import { EditorState } from "@codemirror/state";
+import { EditorView, keymap, placeholder, highlightActiveLine, lineNumbers, highlightActiveLineGutter } from "@codemirror/view";
+import * as commands from "@codemirror/commands";
+import { markdown } from "@codemirror/lang-markdown";
+import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import * as search from "@codemirror/search";
+import { tags as t } from "@lezer/highlight";
+
+/* ---------------------------------------------------------
+   ftnMDReader — reads a folder on disk, lists its markdown files,
+   and lets you open, create, edit and save them.
+
+   Built on the File System Access API (Chrome / Edge / other
+   Chromium browsers). No file ever leaves the machine — every
+   read and write goes straight through the browser to disk.
+--------------------------------------------------------- */
+
+(async () => {
+  "use strict";
+
+  const APP_VERSION = "1.0.9";
+
+  // ---------- DOM references ----------
+
+  const el = {
+    app:           document.getElementById("app"),
+    folderLabel:   document.getElementById("folderLabel"),
+    openFolderBtn: document.getElementById("openFolderBtn"),
+    emptyStateHint: document.getElementById("emptyStateHint"),
+    emptyOpenBtn:  document.getElementById("emptyOpenBtn"),
+    emptyNewFileBtn: document.getElementById("emptyNewFileBtn"),
+    emptyHelpBtn:  document.getElementById("emptyHelpBtn"),
+    newFileBtn:    document.getElementById("newFileBtn"),
+    fileList:      document.getElementById("fileList"),
+    fileCount:     document.getElementById("fileCount"),
+    emptyState:    document.getElementById("emptyState"),
+    docView:       document.getElementById("docView"),
+    docName:       document.getElementById("docName"),
+    docDirty:      document.getElementById("docDirty"),
+    cursorPos:     document.getElementById("cursorPos"),
+    docBody:       document.getElementById("docBody"),
+    docResizer:    document.getElementById("docResizer"),
+    editorWrap:    document.getElementById("editorWrap"),
+    editorMount:   document.getElementById("editorMount"),
+    preview:       document.getElementById("preview"),
+    saveBtn:       document.getElementById("saveBtn"),
+    tabEdit:       document.getElementById("tabEdit"),
+    tabPreview:    document.getElementById("tabPreview"),
+    tabSplit:      document.getElementById("tabSplit"),
+    toolbar:       document.getElementById("toolbar"),
+    reconnectBanner:  document.getElementById("reconnectBanner"),
+    reconnectName:    document.getElementById("reconnectName"),
+    reconnectBtn:     document.getElementById("reconnectBtn"),
+    reconnectDismiss: document.getElementById("reconnectDismiss"),
+    workspace:          document.getElementById("workspace"),
+    sidebar:            document.getElementById("sidebar"),
+    sidebarHead:        document.getElementById("sidebarHead"),
+    sidebarResizer:     document.getElementById("sidebarResizer"),
+    toggleSidebarBtn:   document.getElementById("toggleSidebarBtn"),
+    themeToggleBtn:     document.getElementById("themeToggleBtn"),
+    helpBtn:            document.getElementById("helpBtn"),
+    helpDialog:         document.getElementById("helpDialog"),
+    helpCloseBtn:       document.getElementById("helpCloseBtn"),
+    helpOpenFolderBtn:  document.getElementById("helpOpenFolderBtn"),
+    searchInput:        document.getElementById("searchInput"),
+    searchClear:        document.getElementById("searchClear"),
+    searchContentToggle: document.getElementById("searchContentToggle"),
+    newFileDialog: document.getElementById("newFileDialog"),
+    newFileForm:   document.getElementById("newFileForm"),
+    newFileName:   document.getElementById("newFileName"),
+    newFileLocationLabel: document.getElementById("newFileLocationLabel"),
+    cancelNewFile: document.getElementById("cancelNewFile"),
+    newFolderBtn:      document.getElementById("newFolderBtn"),
+    newFolderDialog:   document.getElementById("newFolderDialog"),
+    newFolderForm:     document.getElementById("newFolderForm"),
+    newFolderName:     document.getElementById("newFolderName"),
+    newFolderLocationLabel: document.getElementById("newFolderLocationLabel"),
+    cancelNewFolder:   document.getElementById("cancelNewFolder"),
+    moveFileDialog:    document.getElementById("moveFileDialog"),
+    moveFileForm:      document.getElementById("moveFileForm"),
+    moveFileName:      document.getElementById("moveFileName"),
+    moveFileTarget:    document.getElementById("moveFileTarget"),
+    cancelMoveFile:    document.getElementById("cancelMoveFile"),
+    renameDialog:      document.getElementById("renameDialog"),
+    renameForm:        document.getElementById("renameForm"),
+    renameDialogTitle: document.getElementById("renameDialogTitle"),
+    renameInput:       document.getElementById("renameInput"),
+    renameExt:         document.getElementById("renameExt"),
+    cancelRename:      document.getElementById("cancelRename"),
+    closeDocBtn:       document.getElementById("closeDocBtn"),
+    zenToggleBtn:      document.getElementById("zenToggleBtn"),
+    zenExitBtn:        document.getElementById("zenExitBtn"),
+    renameCurrentBtn:  document.getElementById("renameCurrentBtn"),
+    revealBtn:         document.getElementById("revealBtn"),
+    exportPdfBtn:      document.getElementById("exportPdfBtn"),
+    exportHtmlBtn:     document.getElementById("exportHtmlBtn"),
+    deleteCurrentBtn:  document.getElementById("deleteCurrentBtn"),
+    refreshFolderBtn:  document.getElementById("refreshFolderBtn"),
+    quickOpenBtn:      document.getElementById("quickOpenBtn"),
+    quickOpenDialog:   document.getElementById("quickOpenDialog"),
+    quickOpenInput:    document.getElementById("quickOpenInput"),
+    quickOpenResults:  document.getElementById("quickOpenResults"),
+    appVersion:        document.getElementById("appVersion"),
+    footerFolder:      document.getElementById("footerFolder"),
+    footerFolderPath:  document.getElementById("footerFolderPath"),
+    footerCopyPathBtn: document.getElementById("footerCopyPathBtn"),
+    toast:         document.getElementById("toast"),
+  };
+
+  // ---------- App state ----------
+
+  const state = {
+    dirHandle: null,
+    files: new Map(),        // path -> { handle, name, parentPath }
+    folders: new Map(),      // path -> { handle, name, parentPath }
+    expandedPaths: new Set(),// folder paths currently expanded in the tree
+    currentPath: null,
+    currentHandle: null,
+    savedValue: "",            // last saved/opened text, for two-way dirty comparison
+    dirty: false,
+    view: "edit",             // edit | preview | split
+    toastTimer: null,
+    query: "",
+    searchContent: false,
+    contentMatches: new Map(), // path -> snippet, populated by content search
+    searchToken: 0,            // guards against stale async content searches
+    newItemTarget: null,       // { handle, path } — where the next new file/folder is created
+    draggingPath: null,        // path currently being dragged, for drop targets to read
+    moveTargetFile: null,      // path pending a move via the "Move to folder…" dialog
+    renameTarget: null,        // { path, kind } pending a rename via the "Rename" dialog
+    quickOpenMatches: [],      // paths currently listed in the quick-open results
+    quickOpenIndex: -1,        // index of the highlighted quick-open result
+    splitPct: 50,               // editor's share of width in split view
+    zenMode: false,              // distraction-free writing mode
+  };
+
+  const isMarkdown = (name) => /\.(md|markdown)$/i.test(name);
+  const basename = (path) => path.split("/").pop();
+  const joinPath = (parentPath, name) => (parentPath ? `${parentPath}/${name}` : name);
+
+  // ---------- Editor engine (CodeMirror 6) ----------
+  // Bundled locally (see build/ and BUILDING.md) — CodeMirror and its
+  // dependencies are pulled from npm and compiled into this very file
+  // with esbuild, so none of this needs the internet at runtime. Editing
+  // works fully offline, unlike the highlight.js CDN dependency Preview's
+  // code-block coloring still has. `el.editor` below is built as a small
+  // compatibility shim exposing the handful of plain-<textarea>
+  // properties the rest of this file already uses (value, selectionStart/
+  // End, setSelectionRange, focus, an 'input' listener) — so everything
+  // downstream (open/save/export, the formatting toolbar's range math,
+  // dirty tracking) keeps working unchanged, while CodeMirror itself
+  // handles real editing: multi-selection, undo history, a proper
+  // markdown parser for syntax colors, line wrapping, etc.
+  //
+  // setupCodeMirror() can still fail in principle (e.g. the mount point
+  // missing from the DOM) — that's what the plain-<textarea> fallback
+  // below is for, wired to the same shim interface, no syntax
+  // highlighting, but the app still opens, edits, and saves files.
+
+  let cmView = null; // the live CodeMirror EditorView, once loaded
+  const editorInputListeners = [];
+  const fireEditorInput = () => editorInputListeners.forEach((fn) => fn());
+
+  function buildEditorShimFromCM() {
+    return {
+      get value() { return cmView.state.doc.toString(); },
+      set value(text) {
+        cmView.dispatch({
+          changes: { from: 0, to: cmView.state.doc.length, insert: text },
+          selection: { anchor: 0 },
+        });
+      },
+      get selectionStart() { return cmView.state.selection.main.from; },
+      get selectionEnd() { return cmView.state.selection.main.to; },
+      setSelectionRange(start, end) {
+        cmView.dispatch({ selection: { anchor: start, head: end }, scrollIntoView: true });
+      },
+      focus() { cmView.focus(); },
+      addEventListener(type, handler) {
+        if (type === "input") editorInputListeners.push(handler);
+      },
+    };
+  }
+
+  // Updates the "Ln 12, Col 4" indicator in the doc header. Works against
+  // either CodeMirror (fast path, via its own line lookup) or the plain
+  // fallback textarea (slower manual count, but that path is only ever
+  // used when the CDN is unreachable).
+  function updateCursorPos() {
+    if (!el.cursorPos || !el.editor) return;
+
+    if (cmView) {
+      const pos = cmView.state.selection.main.head;
+      const line = cmView.state.doc.lineAt(pos);
+      el.cursorPos.textContent = `Ln ${line.number}, Col ${pos - line.from + 1}`;
+    } else {
+      const before = el.editor.value.slice(0, el.editor.selectionStart);
+      const lines = before.split("\n");
+      el.cursorPos.textContent = `Ln ${lines.length}, Col ${lines[lines.length - 1].length + 1}`;
+    }
+  }
+
+  // Applies a single [rangeStart, rangeEnd) replacement plus a resulting
+  // selection, in one atomic step. This is what the formatting toolbar's
+  // range math (wrapSelection/prefixLines/etc., further down) is applied
+  // through — routed as a real CodeMirror transaction (undoable) when
+  // available, or a direct value edit on the fallback textarea otherwise.
+  function dispatchEditorChange(rangeStart, rangeEnd, replacement, selStart, selEnd) {
+    if (cmView) {
+      cmView.dispatch({
+        changes: { from: rangeStart, to: rangeEnd, insert: replacement },
+        selection: { anchor: selStart, head: selEnd },
+        scrollIntoView: true,
+      });
+      cmView.focus();
+    } else if (el.editor) {
+      const value = el.editor.value;
+      el.editor.value = value.slice(0, rangeStart) + replacement + value.slice(rangeEnd);
+      el.editor.setSelectionRange(selStart, selEnd);
+      el.editor.focus();
+      fireEditorInput();
+    }
+  }
+
+  async function setupCodeMirror() {
+    try {
+      // Mirrors the app's --tok-* palette from style.scss, but through
+      // CodeMirror's own markdown parser instead of our old regex-based
+      // one — handles nesting, edge cases, etc. far more reliably.
+      const mdHighlightStyle = HighlightStyle.define([
+        { tag: [t.heading1, t.heading2, t.heading3, t.heading4, t.heading5, t.heading6],
+          color: "var(--teal-dark)", fontWeight: "700" },
+        { tag: t.strong, fontWeight: "700" },
+        { tag: t.emphasis, fontStyle: "italic" },
+        { tag: t.strikethrough, color: "var(--ink-soft)", textDecoration: "line-through" },
+        { tag: t.monospace, color: "#A24E2A", backgroundColor: "rgba(184, 134, 43, 0.14)" },
+        { tag: [t.link, t.url], color: "var(--teal-dark)", textDecoration: "underline" },
+        { tag: t.quote, color: "var(--ink-soft)", fontStyle: "italic" },
+        { tag: t.list, color: "var(--teal)", fontWeight: "700" },
+        { tag: t.contentSeparator, color: "var(--ink-soft)" },
+        { tag: t.processingInstruction, color: "var(--ink-soft)" },
+        { tag: t.meta, color: "var(--ink-soft)" },
+      ]);
+
+      const editorTheme = EditorView.theme({
+        "&": { height: "100%", backgroundColor: "var(--panel)", color: "var(--ink)" },
+        "&.cm-focused": { outline: "none" },
+        ".cm-content": {
+          fontFamily: "var(--mono)", fontSize: "14px", lineHeight: "1.7",
+          padding: "24px 28px", caretColor: "var(--ink)",
+        },
+        ".cm-scroller": { fontFamily: "var(--mono)" },
+        ".cm-cursor": { borderLeftColor: "var(--ink)" },
+        ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+          backgroundColor: "var(--selected-bg) !important",
+        },
+        ".cm-activeLine": { backgroundColor: "var(--line-soft)" },
+        ".cm-placeholder": { color: "var(--ink-soft)", opacity: "0.6" },
+        ".cm-gutters": {
+          backgroundColor: "var(--panel)",
+          color: "var(--ink-soft)",
+          border: "none",
+          borderRight: "1px solid var(--line)",
+        },
+        ".cm-lineNumbers .cm-gutterElement": {
+          padding: "0 10px 0 14px",
+          fontFamily: "var(--mono)",
+          fontSize: "12px",
+        },
+        ".cm-activeLineGutter": {
+          backgroundColor: "var(--line-soft)",
+          color: "var(--ink)",
+        },
+      });
+
+      // Our own bindings take priority (listed first); Tab/Shift-Tab
+      // indentation, Mod-z/Mod-y undo/redo, and general editing keys
+      // (word-wise movement, select-all, etc.) come from CodeMirror's
+      // own defaults. Deliberately no Mod-f binding here — that's the
+      // sidebar file-search shortcut at the app level (see the global
+      // keydown handler below), not a per-document find/replace.
+      const ourKeymap = [
+        { key: "Mod-b", run: () => { applyFormatting("bold"); return true; }, preventDefault: true },
+        { key: "Mod-i", run: () => { applyFormatting("italic"); return true; }, preventDefault: true },
+        { key: "Mod-d", run: search.selectNextOccurrence, preventDefault: true },
+        { key: "Alt-Shift-ArrowDown", run: commands.copyLineDown, preventDefault: true },
+        commands.indentWithTab,
+      ];
+
+      const extensions = [
+        keymap.of([...ourKeymap, ...commands.historyKeymap, ...commands.defaultKeymap]),
+        commands.history(),
+        markdown(),
+        syntaxHighlighting(mdHighlightStyle),
+        highlightActiveLine(),
+        lineNumbers(),
+        highlightActiveLineGutter(),
+        EditorView.lineWrapping,
+        placeholder("Start writing…"),
+        EditorView.contentAttributes.of({ spellcheck: "false", autocorrect: "off", autocapitalize: "off" }),
+        editorTheme,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) fireEditorInput();
+          if (update.docChanged || update.selectionSet) updateCursorPos();
+        }),
+      ];
+
+      cmView = new EditorView({
+        state: EditorState.create({ doc: "", extensions }),
+        parent: el.editorMount,
+      });
+
+      el.editor = buildEditorShimFromCM();
+
+      // Toolbar Undo/Redo buttons route through here (see applyFormatting).
+      el.editor._undo = () => { commands.undo(cmView); cmView.focus(); };
+      el.editor._redo = () => { commands.redo(cmView); cmView.focus(); };
+    } catch (err) {
+      console.error("Couldn't start the CodeMirror editor:", err);
+      setupFallbackTextarea();
+    }
+  }
+
+  // Minimal fallback in case CodeMirror fails to start for any reason: a
+  // plain <textarea> wired to the same shim interface. No syntax
+  // highlighting or multi-select, but files can still be opened, edited,
+  // and saved.
+  function setupFallbackTextarea() {
+    const ta = document.createElement("textarea");
+    ta.className = "editor-fallback";
+    ta.spellcheck = false;
+    ta.placeholder = "Start writing…";
+    el.editorMount.innerHTML = "";
+    el.editorMount.appendChild(ta);
+
+    ta.addEventListener("input", fireEditorInput);
+    ta.addEventListener("input", updateCursorPos);
+    ta.addEventListener("click", updateCursorPos);
+    ta.addEventListener("keyup", updateCursorPos);
+    ta.value = "";
+
+    el.editor = {
+      get value() { return ta.value; },
+      set value(text) { ta.value = text; },
+      get selectionStart() { return ta.selectionStart; },
+      get selectionEnd() { return ta.selectionEnd; },
+      setSelectionRange(start, end) { ta.setSelectionRange(start, end); },
+      focus() { ta.focus(); },
+      addEventListener(type, handler) {
+        if (type === "input") editorInputListeners.push(handler);
+      },
+      _undo() { document.execCommand("undo"); },
+      _redo() { document.execCommand("redo"); },
+    };
+  }
+
+  await setupCodeMirror();
+
+  // ---------- Persisting the last folder (IndexedDB) ----------
+  // FileSystemDirectoryHandle objects are structured-cloneable, so they
+  // can be stored directly in IndexedDB and retrieved on the next visit.
+  // The browser still requires a fresh permission grant each session,
+  // which is why reconnecting shows a banner rather than opening silently.
+
+  const DB_NAME = "ftnMDReader";
+  const STORE_NAME = "handles";
+  const LAST_FOLDER_KEY = "lastFolder";
+
+  function idbOpen() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function idbSet(key, value) {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function idbGet(key) {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function idbDelete(key) {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function rememberFolder(handle) {
+    try { await idbSet(LAST_FOLDER_KEY, handle); }
+    catch (err) { console.warn("Couldn't remember this folder:", err); }
+  }
+
+  async function forgetFolder() {
+    try { await idbDelete(LAST_FOLDER_KEY); }
+    catch (err) { console.warn(err); }
+  }
+
+  // ---------- Feature check ----------
+
+  if (!("showDirectoryPicker" in window)) {
+    el.openFolderBtn.disabled = true;
+    el.emptyOpenBtn.disabled = true;
+    showToast("This browser can't open local folders — try Chrome or Edge.", 6000);
+  }
+
+  // ---------- Folder handling ----------
+
+  async function openFolder() {
+    try {
+      const handle = await window.showDirectoryPicker();
+      await useFolder(handle);
+      await rememberFolder(handle);
+    } catch (err) {
+      // AbortError just means the user closed the picker — ignore it.
+      if (err.name !== "AbortError") {
+        console.error(err);
+        showToast("Couldn't open that folder.");
+      }
+    }
+  }
+
+  async function useFolder(handle) {
+    state.dirHandle = handle;
+    el.folderLabel.textContent = handle.name;
+    el.newFileBtn.disabled = false;
+    el.newFolderBtn.disabled = false;
+    el.refreshFolderBtn.disabled = false;
+    el.quickOpenBtn.disabled = false;
+    hideReconnectBanner();
+    updateEmptyState();
+    await refreshFileList();
+  }
+
+  // On load, check whether a folder was left open last time and offer to
+  // reconnect to it. Browsers require a user gesture to re-grant file
+  // permissions across sessions, so this can't happen silently — but if
+  // permission is already granted (e.g. same tab, soft reload) it skips
+  // straight to opening it.
+  async function restoreLastFolder() {
+    let handle;
+    try { handle = await idbGet(LAST_FOLDER_KEY); }
+    catch { return; }
+    if (!handle) return;
+
+    const permission = await handle.queryPermission({ mode: "readwrite" });
+    if (permission === "granted") {
+      await useFolder(handle);
+      showToast(`Reopened ${handle.name}`);
+    } else {
+      showReconnectBanner(handle);
+    }
+  }
+
+  function showReconnectBanner(handle) {
+    el.reconnectName.textContent = handle.name;
+    el.reconnectBanner.hidden = false;
+    el.reconnectBtn.onclick = async () => {
+      try {
+        const permission = await handle.requestPermission({ mode: "readwrite" });
+        if (permission === "granted") {
+          await useFolder(handle);
+          showToast(`Reopened ${handle.name}`);
+        } else {
+          showToast("Permission wasn't granted.");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("Couldn't reconnect to that folder.");
+      }
+    };
+    el.reconnectDismiss.onclick = () => {
+      hideReconnectBanner();
+      forgetFolder();
+    };
+  }
+
+  function hideReconnectBanner() {
+    el.reconnectBanner.hidden = true;
+  }
+
+  async function refreshFileList() {
+    state.files.clear();
+    state.folders.clear();
+    state.expandedPaths.clear();
+    await scanDirectory(state.dirHandle, "");
+    renderFileList();
+  }
+
+  // Manual "Refresh" button: re-scans the folder like refreshFileList(),
+  // but preserves which folders were expanded and which file was open,
+  // since the person triggering this is likely mid-work rather than
+  // just having opened the folder for the first time.
+  async function refreshFolderManual() {
+    if (!state.dirHandle) return;
+
+    const previousExpanded = new Set(state.expandedPaths);
+    const previousCurrentPath = state.currentPath;
+
+    state.files.clear();
+    state.folders.clear();
+    state.contentMatches.clear();
+    await scanDirectory(state.dirHandle, "");
+
+    state.expandedPaths = new Set([...previousExpanded].filter((p) => state.folders.has(p)));
+    renderFileList();
+
+    if (previousCurrentPath && !state.files.has(previousCurrentPath)) {
+      showToast("The open file no longer appears in this folder.", 3400);
+    } else {
+      showToast("Folder refreshed");
+    }
+  }
+
+  // Walks the whole folder tree up front (rather than lazily per-expand)
+  // so search and the tree view share one simple, always-current index.
+  // A depth guard avoids runaway recursion on unusually deep trees.
+  async function scanDirectory(dirHandle, path, depth = 0) {
+    if (depth > 12) return;
+
+    for await (const [name, handle] of dirHandle.entries()) {
+      const childPath = joinPath(path, name);
+      if (handle.kind === "directory") {
+        state.folders.set(childPath, { handle, name, parentPath: path });
+        await scanDirectory(handle, childPath, depth + 1);
+      } else if (handle.kind === "file" && isMarkdown(name)) {
+        state.files.set(childPath, { handle, name, parentPath: path });
+      }
+    }
+  }
+
+  function highlight(text, query) {
+    if (!query) return escapeHtml(text);
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return escapeHtml(text);
+    return escapeHtml(text.slice(0, idx)) +
+      "<mark>" + escapeHtml(text.slice(idx, idx + query.length)) + "</mark>" +
+      escapeHtml(text.slice(idx + query.length));
+  }
+
+  function snippetAround(text, query, radius = 40) {
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return "";
+    const start = Math.max(0, idx - radius);
+    const end = Math.min(text.length, idx + query.length + radius);
+    const prefix = start > 0 ? "…" : "";
+    const suffix = end < text.length ? "…" : "";
+    return prefix + highlight(text.slice(start, end), query) + suffix;
+  }
+
+  function sortedChildren(map, parentPath) {
+    return [...map.entries()]
+      .filter(([, info]) => info.parentPath === parentPath)
+      .sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { sensitivity: "base" }));
+  }
+
+  function renderFileList() {
+    updateFooterFolderPath();
+    el.fileList.innerHTML = "";
+    el.fileCount.textContent = state.files.size ? String(state.files.size) : "";
+
+    if (state.files.size === 0 && state.folders.size === 0) {
+      const li = document.createElement("li");
+      li.className = "empty-hint";
+      li.textContent = "This folder is empty. Create a file or folder to get started.";
+      el.fileList.appendChild(li);
+      return;
+    }
+
+    const query = state.query.trim();
+    if (query) {
+      renderSearchResults(query);
+    } else {
+      renderTreeLevel(el.fileList, "", 0);
+    }
+  }
+
+  function renderTreeLevel(container, parentPath, depth) {
+    for (const [path, info] of sortedChildren(state.folders, parentPath)) {
+      container.appendChild(buildFolderRow(path, info, depth));
+    }
+    for (const [path, info] of sortedChildren(state.files, parentPath)) {
+      container.appendChild(buildFileRow(path, info, depth, ""));
+    }
+  }
+
+  function buildRowActionButton(symbol, title, onClick, danger) {
+    const btn = document.createElement("button");
+    btn.className = "row-action" + (danger ? " row-action-danger" : "");
+    btn.type = "button";
+    btn.title = title;
+    btn.textContent = symbol;
+    btn.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
+    return btn;
+  }
+
+  function buildFolderRow(path, info, depth) {
+    const expanded = state.expandedPaths.has(path);
+
+    const li = document.createElement("li");
+    li.className = "folder-item";
+
+    const row = document.createElement("div");
+    row.className = "item-row";
+    row.style.paddingLeft = (depth * 14) + "px";
+    row.innerHTML =
+      `<span class="caret">${expanded ? "▾" : "▸"}</span>` +
+      `<span class="icon">📁</span>` +
+      `<span class="name">${escapeHtml(info.name)}</span>`;
+
+    const actions = document.createElement("span");
+    actions.className = "row-actions";
+    actions.appendChild(buildRowActionButton("📄+", "New file here", () => openNewFileDialog(path)));
+    actions.appendChild(buildRowActionButton("📁+", "New folder here", () => openNewFolderDialog(path)));
+    actions.appendChild(buildRowActionButton("✏️", "Rename folder…", () => openRenameDialog(path, "folder")));
+    actions.appendChild(buildRowActionButton("🗑️", "Delete folder…", () => deleteFolder(path), true));
+    row.appendChild(actions);
+
+    row.addEventListener("click", () => toggleFolder(path));
+
+    // Drop target: dragging a file onto a folder row moves it there.
+    row.addEventListener("dragover", (e) => {
+      if (!state.draggingPath) return;
+      e.preventDefault();
+      row.classList.add("drop-target");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
+    row.addEventListener("drop", (e) => {
+      e.preventDefault();
+      row.classList.remove("drop-target");
+      const draggedPath = e.dataTransfer.getData("text/plain") || state.draggingPath;
+      if (draggedPath) moveFile(draggedPath, path);
+    });
+
+    li.appendChild(row);
+
+    if (expanded) {
+      const childUl = document.createElement("ul");
+      childUl.className = "folder-children";
+      renderTreeLevel(childUl, path, depth + 1);
+      li.appendChild(childUl);
+    }
+
+    return li;
+  }
+
+  function buildFileRow(path, info, depth, query) {
+    const li = document.createElement("li");
+    li.className = "file-item" + (path === state.currentPath ? " selected" : "");
+    if (path === state.currentPath && state.dirty) li.classList.add("dirty");
+    li.tabIndex = 0;
+    li.dataset.path = path;
+
+    const row = document.createElement("div");
+    row.className = "item-row";
+    row.draggable = true;
+    row.style.paddingLeft = (depth * 14) + "px";
+    row.innerHTML =
+      `<span class="dot"></span><span class="name">${highlight(info.name, query)}</span>`;
+
+    const actions = document.createElement("span");
+    actions.className = "row-actions";
+    actions.appendChild(buildRowActionButton("✏️", "Rename file…", () => openRenameDialog(path, "file")));
+    actions.appendChild(buildRowActionButton("📂", "Move to folder…", () => openMoveDialog(path)));
+    actions.appendChild(buildRowActionButton("🗑️", "Delete file…", () => deleteFile(path), true));
+    row.appendChild(actions);
+
+    row.addEventListener("dragstart", (e) => {
+      state.draggingPath = path;
+      e.dataTransfer.setData("text/plain", path);
+      e.dataTransfer.effectAllowed = "move";
+      li.classList.add("dragging");
+    });
+    row.addEventListener("dragend", () => {
+      state.draggingPath = null;
+      li.classList.remove("dragging");
+    });
+
+    li.appendChild(row);
+
+    if (query && info.parentPath) {
+      const hint = document.createElement("span");
+      hint.className = "path-hint";
+      hint.textContent = info.parentPath;
+      li.appendChild(hint);
+    }
+
+    const snippet = state.contentMatches.get(path);
+    if (snippet) {
+      const s = document.createElement("span");
+      s.className = "snippet";
+      s.innerHTML = snippet;
+      li.appendChild(s);
+    }
+
+    li.addEventListener("click", () => openFile(path));
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFile(path); }
+    });
+    return li;
+  }
+
+  function renderSearchResults(query) {
+    const lowerQuery = query.toLowerCase();
+    const nameMatches = [...state.files.keys()].filter((p) => p.toLowerCase().includes(lowerQuery));
+    const contentOnly = [...state.contentMatches.keys()].filter(
+      (p) => !nameMatches.includes(p) && state.files.has(p)
+    );
+    const shown = [...nameMatches, ...contentOnly].sort((a, b) => a.localeCompare(b));
+
+    if (shown.length === 0) {
+      const li = document.createElement("li");
+      li.className = "no-results";
+      li.textContent = state.searchContent
+        ? `No files match "${query}".`
+        : `No file names match "${query}". Try "Also search inside files".`;
+      el.fileList.appendChild(li);
+      return;
+    }
+
+    for (const path of shown) {
+      el.fileList.appendChild(buildFileRow(path, state.files.get(path), 0, query));
+    }
+  }
+
+  function toggleFolder(path) {
+    if (state.expandedPaths.has(path)) state.expandedPaths.delete(path);
+    else state.expandedPaths.add(path);
+    renderFileList();
+  }
+
+  // ---------- Search ----------
+
+  function debounce(fn, wait) {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), wait);
+    };
+  }
+
+  const handleSearchInput = debounce(() => {
+    el.searchClear.hidden = state.query.length === 0;
+    state.contentMatches.clear();
+    renderFileList();
+    if (state.searchContent && state.query.trim().length >= 2) {
+      runContentSearch(state.query.trim());
+    }
+  }, 150);
+
+  // Reads every markdown file in the folder looking for the query. Runs
+  // only when "Also search inside files" is on, since it means opening
+  // every file in the folder rather than just checking names.
+  async function runContentSearch(query) {
+    const token = ++state.searchToken;
+    const lowerQuery = query.toLowerCase();
+
+    for (const [path, info] of state.files) {
+      if (token !== state.searchToken) return; // a newer search superseded this one
+      try {
+        const file = await info.handle.getFile();
+        const text = await file.text();
+        if (text.toLowerCase().includes(lowerQuery)) {
+          state.contentMatches.set(path, snippetAround(text, query));
+          if (token === state.searchToken) renderFileList();
+        }
+      } catch {
+        // Skip files that fail to read (e.g. removed mid-search)
+      }
+    }
+  }
+
+  // ---------- File open / save ----------
+
+  async function openFile(path) {
+    if (state.dirty && !(await confirmDiscard())) return;
+
+    const info = state.files.get(path);
+    if (!info) return;
+
+    try {
+      const file = await info.handle.getFile();
+      const text = await file.text();
+
+      state.currentPath = path;
+      state.currentHandle = info.handle;
+      state.dirty = false;
+      state.savedValue = text;
+
+      el.editor.value = text;
+      updateCursorPos();
+      el.docName.textContent = info.name;
+      el.docName.title = path;
+      el.docDirty.hidden = true;
+      el.saveBtn.disabled = true;
+      el.emptyState.hidden = true;
+      el.docView.hidden = false;
+
+      renderPreview();
+      renderFileList();
+      el.editor.focus();
+    } catch (err) {
+      console.error(err);
+      showToast(`Couldn't open ${info.name}.`);
+    }
+  }
+
+  async function confirmDiscard() {
+    return window.confirm(`${basename(state.currentPath)} has unsaved changes. Discard them?`);
+  }
+
+  async function saveCurrentFile() {
+    if (!state.currentHandle || !state.dirty) return;
+
+    try {
+      const writable = await state.currentHandle.createWritable();
+      await writable.write(el.editor.value);
+      await writable.close();
+
+      state.savedValue = el.editor.value;
+      state.dirty = false;
+      el.docDirty.hidden = true;
+      el.saveBtn.disabled = true;
+      renderFileList();
+      showToast(`Saved ${basename(state.currentPath)}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't save — check the file is still writable.");
+    }
+  }
+
+  // Recomputes dirty state by comparing the live text against the last
+  // saved/opened snapshot, rather than only ever flipping dirty on — so
+  // undoing back to the saved text correctly clears the "unsaved" mark.
+  function updateDirtyState() {
+    const isDirty = el.editor.value !== state.savedValue;
+    if (isDirty === state.dirty) return;
+    state.dirty = isDirty;
+    el.docDirty.hidden = !isDirty;
+    el.saveBtn.disabled = !isDirty;
+    renderFileList();
+  }
+
+  // ---------- New file / New folder ----------
+  // Both accept an optional target folder path. Passing none targets the
+  // root of the open folder, which is what the top-bar buttons do; the
+  // per-folder "+" icons in the tree pass that folder's path instead.
+
+  function resolveTarget(targetPath) {
+    if (!targetPath) return { handle: state.dirHandle, path: "" };
+    const info = state.folders.get(targetPath);
+    return info ? { handle: info.handle, path: targetPath } : { handle: state.dirHandle, path: "" };
+  }
+
+  function openNewFileDialog(targetPath) {
+    state.newItemTarget = resolveTarget(targetPath);
+    el.newFileLocationLabel.textContent = state.newItemTarget.path
+      ? `File name — in ${state.newItemTarget.path}/`
+      : "File name — in root";
+    el.newFileName.value = "";
+    el.newFileDialog.showModal();
+    el.newFileName.focus();
+  }
+
+  async function createNewFile(rawName) {
+    let name = rawName.trim();
+    if (!name) return;
+    if (!isMarkdown(name)) name += ".md";
+
+    const target = state.newItemTarget || resolveTarget();
+    const path = joinPath(target.path, name);
+
+    if (state.files.has(path)) {
+      showToast(`${name} already exists.`);
+      return;
+    }
+
+    try {
+      const handle = await target.handle.getFileHandle(name, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(`# ${name.replace(/\.(md|markdown)$/i, "")}\n\n`);
+      await writable.close();
+
+      state.files.set(path, { handle, name, parentPath: target.path });
+      if (target.path) state.expandedPaths.add(target.path);
+      renderFileList();
+      await openFile(path);
+      showToast(`Created ${name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't create that file.");
+    }
+  }
+
+  function openNewFolderDialog(targetPath) {
+    state.newItemTarget = resolveTarget(targetPath);
+    el.newFolderLocationLabel.textContent = state.newItemTarget.path
+      ? `Folder name — in ${state.newItemTarget.path}/`
+      : "Folder name — in root";
+    el.newFolderName.value = "";
+    el.newFolderDialog.showModal();
+    el.newFolderName.focus();
+  }
+
+  async function createNewFolder(rawName) {
+    const name = rawName.trim();
+    if (!name) return;
+    if (/[/\\]/.test(name)) {
+      showToast("Folder names can't contain slashes.");
+      return;
+    }
+
+    const target = state.newItemTarget || resolveTarget();
+    const path = joinPath(target.path, name);
+
+    if (state.folders.has(path)) {
+      showToast(`${name} already exists.`);
+      return;
+    }
+
+    try {
+      const handle = await target.handle.getDirectoryHandle(name, { create: true });
+      state.folders.set(path, { handle, name, parentPath: target.path });
+      if (target.path) state.expandedPaths.add(target.path);
+      state.expandedPaths.add(path); // open it so the new, empty folder is visible
+      renderFileList();
+      showToast(`Created folder ${name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't create that folder.");
+    }
+  }
+
+  // ---------- Move file ----------
+  // Prefers the native FileSystemHandle.move() when available (Chrome 116+),
+  // which relocates the file in place. Older browsers fall back to a
+  // copy-then-delete, which is otherwise equivalent from the user's view.
+
+  function parentHandleFor(parentPath) {
+    if (!parentPath) return state.dirHandle;
+    const info = state.folders.get(parentPath);
+    return info ? info.handle : state.dirHandle;
+  }
+
+  async function moveFile(path, targetFolderPath) {
+    const info = state.files.get(path);
+    if (!info) return;
+
+    const destPath = targetFolderPath || "";
+    if (destPath === info.parentPath) return; // already there
+
+    const newPath = joinPath(destPath, info.name);
+    if (state.files.has(newPath)) {
+      showToast(`${info.name} already exists in that folder.`);
+      return;
+    }
+
+    const destHandle = destPath ? state.folders.get(destPath)?.handle : state.dirHandle;
+    if (!destHandle) return;
+
+    try {
+      if (typeof info.handle.move === "function") {
+        await info.handle.move(destHandle);
+      } else {
+        // Fallback for browsers without FileSystemHandle.move(): copy the
+        // contents into a new handle in the destination, then remove the original.
+        const file = await info.handle.getFile();
+        const text = await file.text();
+        const newHandle = await destHandle.getFileHandle(info.name, { create: true });
+        const writable = await newHandle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        await parentHandleFor(info.parentPath).removeEntry(info.name);
+        info.handle = newHandle;
+      }
+
+      state.files.delete(path);
+      state.files.set(newPath, { handle: info.handle, name: info.name, parentPath: destPath });
+      if (destPath) state.expandedPaths.add(destPath);
+      if (state.currentPath === path) {
+        state.currentPath = newPath;
+        el.docName.title = newPath;
+      }
+
+      renderFileList();
+      showToast(`Moved ${info.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't move that file.");
+    }
+  }
+
+  function openMoveDialog(path) {
+    const info = state.files.get(path);
+    if (!info) return;
+
+    const destinations = [...state.folders.keys()]
+      .filter((p) => p !== info.parentPath)
+      .sort((a, b) => a.localeCompare(b));
+
+    el.moveFileTarget.innerHTML = "";
+    if (info.parentPath !== "") {
+      const rootOpt = document.createElement("option");
+      rootOpt.value = "";
+      rootOpt.textContent = "Root (top level)";
+      el.moveFileTarget.appendChild(rootOpt);
+    }
+    for (const p of destinations) {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      el.moveFileTarget.appendChild(opt);
+    }
+
+    if (el.moveFileTarget.options.length === 0) {
+      showToast("No other folders to move into yet — create one first.");
+      return;
+    }
+
+    state.moveTargetFile = path;
+    el.moveFileName.textContent = info.name;
+    el.moveFileDialog.showModal();
+  }
+
+  // ---------- Rename file / folder ----------
+  // Prefers the native FileSystemHandle.move(newName) when available, which
+  // renames in place without touching contents. The fallback (older
+  // browsers) copies byte-for-byte via ArrayBuffer — safe for any file
+  // type, not just text — then deletes the original. For folders, the
+  // fallback copies the whole subtree recursively, then the local index
+  // for that subtree is dropped and rescanned against the new handle so
+  // every cached child handle stays valid.
+
+  async function copyFileTo(sourceHandle, destParentHandle, name) {
+    const file = await sourceHandle.getFile();
+    const buffer = await file.arrayBuffer();
+    const newHandle = await destParentHandle.getFileHandle(name, { create: true });
+    const writable = await newHandle.createWritable();
+    await writable.write(buffer);
+    await writable.close();
+    return newHandle;
+  }
+
+  async function copyDirectoryRecursive(sourceHandle, destParentHandle, name) {
+    const newDirHandle = await destParentHandle.getDirectoryHandle(name, { create: true });
+    for await (const [entryName, entryHandle] of sourceHandle.entries()) {
+      if (entryHandle.kind === "directory") {
+        await copyDirectoryRecursive(entryHandle, newDirHandle, entryName);
+      } else {
+        await copyFileTo(entryHandle, newDirHandle, entryName);
+      }
+    }
+    return newDirHandle;
+  }
+
+  function pruneSubtree(folderPath) {
+    const prefix = folderPath + "/";
+    for (const p of [...state.folders.keys()]) {
+      if (p === folderPath || p.startsWith(prefix)) state.folders.delete(p);
+    }
+    for (const p of [...state.files.keys()]) {
+      if (p.startsWith(prefix)) state.files.delete(p);
+    }
+    for (const p of [...state.expandedPaths]) {
+      if (p === folderPath || p.startsWith(prefix)) state.expandedPaths.delete(p);
+    }
+    for (const p of [...state.contentMatches.keys()]) {
+      if (p.startsWith(prefix)) state.contentMatches.delete(p);
+    }
+  }
+
+  async function renameEntry(path, kind, rawName) {
+    let finalName = rawName.trim();
+    if (!finalName) return;
+    if (/[/\\]/.test(finalName)) {
+      showToast("Names can't contain slashes.");
+      return;
+    }
+    if (kind === "file" && !isMarkdown(finalName)) finalName += ".md";
+
+    const map = kind === "file" ? state.files : state.folders;
+    const info = map.get(path);
+    if (!info) return;
+
+    if (finalName === info.name) return; // no-op
+
+    const parentPath = info.parentPath;
+    const newPath = joinPath(parentPath, finalName);
+    if (state.files.has(newPath) || state.folders.has(newPath)) {
+      showToast(`${finalName} already exists.`);
+      return;
+    }
+
+    const parentHandle = parentHandleFor(parentPath);
+
+    try {
+      let newHandle;
+      if (typeof info.handle.move === "function") {
+        await info.handle.move(finalName);
+        newHandle = info.handle;
+      } else if (kind === "file") {
+        newHandle = await copyFileTo(info.handle, parentHandle, finalName);
+        await parentHandle.removeEntry(info.name);
+      } else {
+        newHandle = await copyDirectoryRecursive(info.handle, parentHandle, finalName);
+        await parentHandle.removeEntry(info.name, { recursive: true });
+      }
+
+      if (kind === "file") {
+        state.files.delete(path);
+        state.files.set(newPath, { handle: newHandle, name: finalName, parentPath });
+        if (state.currentPath === path) {
+          state.currentPath = newPath;
+          state.currentHandle = newHandle;
+          el.docName.textContent = finalName;
+          el.docName.title = newPath;
+        }
+      } else {
+        const wasExpanded = state.expandedPaths.has(path);
+        const currentInsideRenamed = state.currentPath && state.currentPath.startsWith(path + "/")
+          ? state.currentPath.slice(path.length + 1)
+          : null;
+
+        pruneSubtree(path);
+        state.folders.set(newPath, { handle: newHandle, name: finalName, parentPath });
+        if (wasExpanded) state.expandedPaths.add(newPath);
+        await scanDirectory(newHandle, newPath);
+
+        if (currentInsideRenamed) {
+          const newCurrentPath = joinPath(newPath, currentInsideRenamed);
+          const reopened = state.files.get(newCurrentPath);
+          if (reopened) {
+            state.currentPath = newCurrentPath;
+            state.currentHandle = reopened.handle;
+            el.docName.title = newCurrentPath;
+          }
+        }
+      }
+
+      renderFileList();
+      showToast(`Renamed to ${finalName}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't rename that.");
+    }
+  }
+
+  function openRenameDialog(path, kind) {
+    const map = kind === "file" ? state.files : state.folders;
+    const info = map.get(path);
+    if (!info) return;
+
+    state.renameTarget = { path, kind };
+    el.renameDialogTitle.textContent = kind === "file" ? "Rename file" : "Rename folder";
+
+    if (kind === "file") {
+      el.renameInput.value = info.name.replace(/\.(md|markdown)$/i, "");
+      el.renameExt.hidden = false;
+    } else {
+      el.renameInput.value = info.name;
+      el.renameExt.hidden = true;
+    }
+
+    el.renameDialog.showModal();
+    el.renameInput.focus();
+    el.renameInput.select();
+  }
+
+  // ---------- Delete file / folder ----------
+
+  async function closeDocument() {
+    if (!state.currentPath) return;
+    if (state.dirty && !(await confirmDiscard())) return;
+    closeCurrentDocument();
+    renderFileList();
+  }
+
+  // Empty state text/actions depend on whether a folder is already open:
+  // before opening one, "Open folder" is the call to action; once a folder
+  // is open but nothing is selected, guide toward picking or creating a
+  // file instead, since re-showing "Open folder" there would be misleading.
+  function updateEmptyState() {
+    if (state.dirHandle) {
+      el.emptyStateHint.textContent = "Select a file to edit, or create a new one.";
+      el.emptyOpenBtn.hidden = true;
+      el.emptyNewFileBtn.hidden = false;
+    } else {
+      el.emptyStateHint.textContent = "No folder open yet.";
+      el.emptyOpenBtn.hidden = false;
+      el.emptyNewFileBtn.hidden = true;
+    }
+  }
+
+  function closeCurrentDocument() {
+    state.currentPath = null;
+    state.currentHandle = null;
+    state.savedValue = "";
+    state.dirty = false;
+    el.editor.value = "";
+    updateCursorPos();
+    el.docView.hidden = true;
+    el.emptyState.hidden = false;
+    updateEmptyState();
+    if (state.zenMode) toggleZenMode();
+  }
+
+  async function deleteFile(path) {
+    const info = state.files.get(path);
+    if (!info) return;
+    if (!window.confirm(`Delete "${info.name}"? This can't be undone.`)) return;
+
+    try {
+      await parentHandleFor(info.parentPath).removeEntry(info.name);
+      state.files.delete(path);
+      state.contentMatches.delete(path);
+      if (state.currentPath === path) closeCurrentDocument();
+      renderFileList();
+      showToast(`Deleted ${info.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't delete that file.");
+    }
+  }
+
+  async function deleteFolder(path) {
+    const info = state.folders.get(path);
+    if (!info) return;
+    if (!window.confirm(`Delete "${info.name}" and everything inside it? This can't be undone.`)) return;
+
+    try {
+      await parentHandleFor(info.parentPath).removeEntry(info.name, { recursive: true });
+      const currentWasInside = state.currentPath &&
+        (state.currentPath === path || state.currentPath.startsWith(path + "/"));
+      pruneSubtree(path); // also removes the folder entry itself
+      if (currentWasInside) closeCurrentDocument();
+      renderFileList();
+      showToast(`Deleted ${info.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't delete that folder.");
+    }
+  }
+
+  // ---------- Reveal in sidebar ----------
+  // Browsers can't open the OS file explorer from a web page for security
+  // reasons — this is the closest useful equivalent: expand every ancestor
+  // folder and scroll the file into view in the tree, briefly highlighted.
+
+  function revealInSidebar(path) {
+    const info = state.files.get(path);
+    if (!info) return;
+
+    let p = info.parentPath;
+    while (p) {
+      state.expandedPaths.add(p);
+      const parentInfo = state.folders.get(p);
+      p = parentInfo ? parentInfo.parentPath : "";
+    }
+
+    if (state.query) {
+      state.query = "";
+      el.searchInput.value = "";
+      el.searchClear.hidden = true;
+      state.contentMatches.clear();
+    }
+
+    renderFileList();
+
+    requestAnimationFrame(() => {
+      const row = el.fileList.querySelector(`li.file-item[data-path="${CSS.escape(path)}"]`);
+      if (!row) return;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      row.classList.add("flash");
+      setTimeout(() => row.classList.remove("flash"), 1200);
+    });
+  }
+
+  // ---------- Quick open (Ctrl/Cmd+K) ----------
+  // A lightweight command-palette: type to filter every markdown file in
+  // the open folder by name/path, navigate with arrow keys, Enter to open.
+
+  function openQuickOpen() {
+    if (!state.dirHandle) return;
+    el.quickOpenInput.value = "";
+    renderQuickOpenResults("");
+    el.quickOpenDialog.showModal();
+    el.quickOpenInput.focus();
+  }
+
+  function renderQuickOpenResults(query) {
+    const lowerQuery = query.trim().toLowerCase();
+    let matches = [...state.files.entries()];
+
+    if (lowerQuery) {
+      matches = matches.filter(([path]) => path.toLowerCase().includes(lowerQuery));
+      matches.sort((a, b) => {
+        const aStarts = a[1].name.toLowerCase().startsWith(lowerQuery) ? 0 : 1;
+        const bStarts = b[1].name.toLowerCase().startsWith(lowerQuery) ? 0 : 1;
+        if (aStarts !== bStarts) return aStarts - bStarts;
+        return a[0].localeCompare(b[0]);
+      });
+    } else {
+      matches.sort((a, b) => a[0].localeCompare(b[0]));
+    }
+    matches = matches.slice(0, 50);
+
+    el.quickOpenResults.innerHTML = "";
+    state.quickOpenMatches = matches.map(([path]) => path);
+    state.quickOpenIndex = matches.length ? 0 : -1;
+
+    if (matches.length === 0) {
+      const li = document.createElement("li");
+      li.className = "quick-open-empty";
+      li.textContent = state.files.size ? "No files match." : "No markdown files in this folder.";
+      el.quickOpenResults.appendChild(li);
+      return;
+    }
+
+    matches.forEach(([path, info], idx) => {
+      const li = document.createElement("li");
+      li.className = "quick-open-item" + (idx === 0 ? " active" : "");
+      li.innerHTML =
+        `<span class="qo-name">${escapeHtml(info.name)}</span>` +
+        (info.parentPath ? `<span class="qo-path">${escapeHtml(info.parentPath)}</span>` : "");
+      li.addEventListener("click", () => { el.quickOpenDialog.close(); openFile(path); });
+      el.quickOpenResults.appendChild(li);
+    });
+  }
+
+  function moveQuickOpenSelection(delta) {
+    const items = [...el.quickOpenResults.querySelectorAll(".quick-open-item")];
+    if (items.length === 0) return;
+    items[state.quickOpenIndex]?.classList.remove("active");
+    state.quickOpenIndex = (state.quickOpenIndex + delta + items.length) % items.length;
+    items[state.quickOpenIndex].classList.add("active");
+    items[state.quickOpenIndex].scrollIntoView({ block: "nearest" });
+  }
+
+  function confirmQuickOpenSelection() {
+    const path = state.quickOpenMatches[state.quickOpenIndex];
+    if (!path) return;
+    el.quickOpenDialog.close();
+    openFile(path);
+  }
+
+  // ---------- Export to PDF ----------
+  // There's no in-browser way to generate a PDF file directly without a
+  // heavy extra library (and those typically rasterize the page, losing
+  // selectable/searchable text). Instead this renders the file to the
+  // print stylesheet above and calls the browser's native print dialog,
+  // where "Save as PDF" produces a real, text-based PDF.
+
+  function exportToPdf() {
+    if (!state.currentPath) {
+      showToast("Open a file first.");
+      return;
+    }
+
+    renderPreview(); // make sure the preview reflects the latest edits
+
+    const originalTitle = document.title;
+    document.title = basename(state.currentPath).replace(/\.(md|markdown)$/i, "");
+
+    const restoreTitle = () => { document.title = originalTitle; };
+    window.addEventListener("afterprint", restoreTitle, { once: true });
+    setTimeout(restoreTitle, 5000); // fallback in case afterprint doesn't fire
+
+    window.print();
+  }
+
+  // ---------- Export to HTML ----------
+  // Unlike the PDF export, this can be a genuine one-click download: HTML
+  // is just text, so it's assembled directly and saved via a Blob — no
+  // print dialog needed. Code blocks are highlighted into a *detached*
+  // element (not the live preview) so the exported file gets real, static
+  // color spans without any of the app's own UI chrome (copy buttons,
+  // language labels) leaking into the download. Layout/typography are
+  // inlined so the file looks right offline; only the exact syntax-color
+  // theme depends on the CDN stylesheet also used by the app itself.
+
+  function buildExportHtml(title, bodyHtml) {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<style>
+  :root {
+    --paper: #F1F0E8; --ink: #22261F; --ink-soft: #5B6156;
+    --line: #E1DDCC; --teal: #1F6F5C; --teal-dark: #164F41;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif; line-height: 1.7; }
+  .doc { max-width: 760px; margin: 0 auto; padding: 48px 36px 24px; }
+  .doc h1, .doc h2, .doc h3 { line-height: 1.3; }
+  .doc h1 { font-size: 30px; margin: 0 0 16px; }
+  .doc h2 { font-size: 23px; margin: 32px 0 12px; }
+  .doc h3 { font-size: 19px; margin: 26px 0 10px; }
+  .doc p { margin: 0 0 16px; }
+  .doc a { color: var(--teal-dark); }
+  .doc code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    background: #EAE7DA; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  .doc pre { background: #292C24; color: #F1F0E8; padding: 16px 18px; border-radius: 8px;
+    overflow-x: auto; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 13px; }
+  .doc pre code { background: none; padding: 0; color: inherit; }
+  .doc blockquote { margin: 0 0 16px; padding-left: 16px; border-left: 3px solid var(--teal); color: var(--ink-soft); }
+  .doc ul, .doc ol { margin: 0 0 16px; padding-left: 24px; }
+  .doc img { max-width: 100%; border-radius: 4px; }
+  .doc hr { border: none; border-top: 1px solid var(--line); margin: 32px 0; }
+  .doc table { border-collapse: collapse; margin: 0 0 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; }
+  .export-footer { max-width: 760px; margin: 0 auto; padding: 0 36px 40px;
+    font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div class="doc">
+${bodyHtml}
+</div>
+<p class="export-footer">Exported from ftnMDReader v${APP_VERSION}</p>
+</body>
+</html>`;
+  }
+
+  function exportToHtml() {
+    if (!state.currentPath) {
+      showToast("Open a file first.");
+      return;
+    }
+
+    const rawHtml = markdownToHtml(el.editor.value);
+
+    // Bake in real syntax-highlight spans on a detached element, so the
+    // exported file is plain static markup (no runtime JS dependency,
+    // no app-only UI like copy buttons or language labels).
+    const temp = document.createElement("div");
+    temp.innerHTML = rawHtml;
+    if (window.hljs) {
+      temp.querySelectorAll("pre code").forEach((codeEl) => {
+        try { hljs.highlightElement(codeEl); } catch { /* unrecognized language — leave plain */ }
+      });
+    }
+
+    const title = basename(state.currentPath).replace(/\.(md|markdown)$/i, "");
+    const doc = buildExportHtml(title, temp.innerHTML);
+
+    const blob = new Blob([doc], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+    showToast(`Exported ${title}.html`);
+  }
+
+  // ---------- View mode (edit / preview / split) ----------
+
+  function setView(view) {
+    state.view = view;
+    el.docBody.className = "doc-body mode-" + view;
+    for (const [tab, name] of [[el.tabEdit, "edit"], [el.tabPreview, "preview"], [el.tabSplit, "split"]]) {
+      tab.classList.toggle("active", name === view);
+    }
+    el.toolbar.hidden = view === "preview";
+    el.cursorPos.hidden = view === "preview";
+    el.editorWrap.style.flex = view === "split" ? `0 0 ${state.splitPct}%` : "";
+    if (view !== "edit") renderPreview();
+  }
+
+  // ---------- Formatting toolbar ----------
+  // Each action describes an edit as "replace this range with this text"
+  // rather than building the whole new document string. It's applied via
+  // dispatchEditorChange() (defined above, near the editor setup), as a
+  // single CodeMirror transaction — which is what keeps it on the native
+  // undo/redo stack, so Ctrl/Cmd+Z works for toolbar actions exactly like
+  // typing.
+
+  function wrapSelection(value, start, end, before, after, placeholder) {
+    const hasSelection = end > start;
+    const selected = hasSelection ? value.slice(start, end) : placeholder;
+    const replacement = before + selected + after;
+    const selStart = start + before.length;
+    const selEnd = selStart + selected.length;
+    return { rangeStart: start, rangeEnd: end, replacement, selStart, selEnd };
+  }
+
+  function lineRange(value, start, end) {
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    let lineEnd = value.indexOf("\n", end);
+    if (lineEnd === -1) lineEnd = value.length;
+    return { lineStart, lineEnd };
+  }
+
+  function prefixLines(value, start, end, prefix) {
+    const { lineStart, lineEnd } = lineRange(value, start, end);
+    const block = value.slice(lineStart, lineEnd);
+    const replacement = block.split("\n").map((l) => prefix + l).join("\n");
+    return { rangeStart: lineStart, rangeEnd: lineEnd, replacement, selStart: lineStart, selEnd: lineStart + replacement.length };
+  }
+
+  function setHeading(value, start, end, level) {
+    const { lineStart, lineEnd } = lineRange(value, start, end);
+    const block = value.slice(lineStart, lineEnd);
+    const marker = "#".repeat(level) + " ";
+    const replacement = block.split("\n")
+      .map((l) => marker + l.replace(/^#{1,6}\s+/, ""))
+      .join("\n");
+    return { rangeStart: lineStart, rangeEnd: lineEnd, replacement, selStart: lineStart, selEnd: lineStart + replacement.length };
+  }
+
+  function insertAtCursor(value, start, end, text, cursorOffset) {
+    const pos = start + (cursorOffset ?? text.length);
+    return { rangeStart: start, rangeEnd: end, replacement: text, selStart: pos, selEnd: pos };
+  }
+
+  const TABLE_TEMPLATE =
+    "\n| Column 1 | Column 2 |\n| --- | --- |\n| Cell | Cell |\n";
+
+  function applyFormatting(action) {
+    const ta = el.editor;
+    const { value, selectionStart: start, selectionEnd: end } = ta;
+    let result;
+
+    switch (action) {
+      case "undo": ta._undo(); return;
+      case "redo": ta._redo(); return;
+      case "h1": result = setHeading(value, start, end, 1); break;
+      case "h2": result = setHeading(value, start, end, 2); break;
+      case "h3": result = setHeading(value, start, end, 3); break;
+      case "bold": result = wrapSelection(value, start, end, "**", "**", "bold text"); break;
+      case "italic": result = wrapSelection(value, start, end, "_", "_", "italic text"); break;
+      case "strike": result = wrapSelection(value, start, end, "~~", "~~", "strikethrough"); break;
+      case "code": result = wrapSelection(value, start, end, "`", "`", "code"); break;
+      case "codeblock": result = wrapSelection(value, start, end, "```\n", "\n```", "code"); break;
+      case "quote": result = prefixLines(value, start, end, "> "); break;
+      case "ul": result = prefixLines(value, start, end, "- "); break;
+      case "ol": result = prefixLines(value, start, end, "1. "); break;
+      case "task": result = prefixLines(value, start, end, "- [ ] "); break;
+      case "hr": result = insertAtCursor(value, start, end, "\n---\n", 5); break;
+      case "table": result = insertAtCursor(value, start, end, TABLE_TEMPLATE, TABLE_TEMPLATE.length); break;
+      case "link": {
+        const hasSelection = end > start;
+        const text = hasSelection ? value.slice(start, end) : "link text";
+        const replacement = `[${text}](url)`;
+        const urlStart = start + text.length + 3; // position inside "(url)"
+        result = { rangeStart: start, rangeEnd: end, replacement, selStart: urlStart, selEnd: urlStart + 3 };
+        break;
+      }
+      case "image": {
+        const hasSelection = end > start;
+        const alt = hasSelection ? value.slice(start, end) : "alt text";
+        const replacement = `![${alt}](image-url)`;
+        const urlStart = start + alt.length + 4; // position inside "(image-url)"
+        result = { rangeStart: start, rangeEnd: end, replacement, selStart: urlStart, selEnd: urlStart + 9 };
+        break;
+      }
+      default: return;
+    }
+
+    dispatchEditorChange(result.rangeStart, result.rangeEnd, result.replacement, result.selStart, result.selEnd);
+    updateDirtyState();
+    if (state.view !== "edit") renderPreview();
+  }
+
+  // ---------- Markdown rendering ----------
+  // A small, dependency-free markdown-to-HTML renderer covering the
+  // common subset: headings, emphasis, links, images, code, lists,
+  // blockquotes, rules and tables.
+
+  function renderPreview() {
+    el.preview.innerHTML = markdownToHtml(el.editor.value);
+    enhanceCodeBlocks();
+  }
+
+  // Wraps each rendered <pre> in a positioning container, applies
+  // highlight.js syntax coloring for the fence's declared language (or
+  // its best guess if none was given), shows a small language label, and
+  // adds a "Copy" button that copies the code block's plain text.
+  function enhanceCodeBlocks() {
+    const blocks = el.preview.querySelectorAll("pre");
+    blocks.forEach((pre) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "code-block-wrap";
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      const codeEl = pre.querySelector("code");
+      if (codeEl && window.hljs) {
+        try { hljs.highlightElement(codeEl); } catch { /* unrecognized language — leave as plain text */ }
+      }
+
+      const lang = codeEl?.dataset.lang;
+      if (lang) {
+        wrapper.classList.add("has-label");
+        const label = document.createElement("span");
+        label.className = "code-lang-label";
+        label.textContent = lang;
+        wrapper.appendChild(label);
+      }
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "copy-code-btn";
+      btn.textContent = "Copy";
+      btn.addEventListener("click", () => copyCodeBlock(pre, btn));
+      wrapper.appendChild(btn);
+    });
+  }
+
+  async function copyCodeBlock(pre, btn) {
+    const code = pre.querySelector("code");
+    const text = code ? code.textContent : pre.textContent;
+
+    try {
+      await copyText(text);
+      btn.textContent = "Copied!";
+      btn.classList.add("copied");
+    } catch (err) {
+      console.error(err);
+      btn.textContent = "Couldn't copy";
+    }
+
+    setTimeout(() => {
+      btn.textContent = "Copy";
+      btn.classList.remove("copied");
+    }, 1600);
+  }
+
+  // Shared clipboard helper: the async Clipboard API where available,
+  // falling back to a hidden textarea + execCommand for contexts where
+  // it isn't (e.g. some file:// pages).
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      copyWithFallback(text);
+    }
+  }
+
+  function copyWithFallback(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function inline(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img alt="$1" src="$2">');
+    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    out = out.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    out = out.replace(/(?<!_)_([^_]+)_(?!_)/g, "<em>$1</em>");
+    out = out.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+    return out;
+  }
+
+  function markdownToHtml(src) {
+    const lines = src.replace(/\r\n/g, "\n").split("\n");
+    const html = [];
+    let i = 0;
+    let listStack = []; // stack of 'ul' | 'ol'
+
+    const closeLists = () => {
+      while (listStack.length) html.push(`</${listStack.pop()}>`);
+    };
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // fenced code block
+      if (/^```/.test(line)) {
+        const lang = line.slice(3).trim();
+        const buf = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i])) { buf.push(lines[i]); i++; }
+        i++; // skip closing fence
+        closeLists();
+        const langAttr = lang ? ` data-lang="${escapeHtml(lang)}" class="language-${escapeHtml(lang)}"` : "";
+        html.push(`<pre><code${langAttr}>${escapeHtml(buf.join("\n"))}</code></pre>`);
+        continue;
+      }
+
+      // horizontal rule
+      if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) {
+        closeLists();
+        html.push("<hr>");
+        i++; continue;
+      }
+
+      // headings
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        closeLists();
+        const level = heading[1].length;
+        html.push(`<h${level}>${inline(heading[2].trim())}</h${level}>`);
+        i++; continue;
+      }
+
+      // blockquote
+      if (/^\s*>\s?/.test(line)) {
+        closeLists();
+        const buf = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+          buf.push(lines[i].replace(/^\s*>\s?/, "")); i++;
+        }
+        html.push(`<blockquote>${markdownToHtml(buf.join("\n"))}</blockquote>`);
+        continue;
+      }
+
+      // unordered list
+      if (/^\s*[-*+]\s+/.test(line)) {
+        if (listStack[listStack.length - 1] !== "ul") { closeLists(); html.push("<ul>"); listStack.push("ul"); }
+        html.push(`<li>${inline(line.replace(/^\s*[-*+]\s+/, ""))}</li>`);
+        i++; continue;
+      }
+
+      // ordered list
+      if (/^\s*\d+\.\s+/.test(line)) {
+        if (listStack[listStack.length - 1] !== "ol") { closeLists(); html.push("<ol>"); listStack.push("ol"); }
+        html.push(`<li>${inline(line.replace(/^\s*\d+\.\s+/, ""))}</li>`);
+        i++; continue;
+      }
+
+      // table (header + separator row)
+      if (/^\s*\|.*\|\s*$/.test(line) && lines[i + 1] && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+        closeLists();
+        const headCells = line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+        i += 2;
+        const rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
+          rows.push(lines[i].trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
+          i++;
+        }
+        html.push("<table><thead><tr>" +
+          headCells.map((c) => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>" +
+          rows.map((r) => "<tr>" + r.map((c) => `<td>${inline(c)}</td>`).join("") + "</tr>").join("") +
+          "</tbody></table>");
+        continue;
+      }
+
+      // blank line
+      if (/^\s*$/.test(line)) { closeLists(); i++; continue; }
+
+      // paragraph (gather contiguous non-blank plain lines)
+      closeLists();
+      const buf = [line];
+      i++;
+      while (i < lines.length && !/^\s*$/.test(lines[i]) &&
+             !/^(#{1,6})\s+/.test(lines[i]) && !/^\s*[-*+]\s+/.test(lines[i]) &&
+             !/^\s*\d+\.\s+/.test(lines[i]) && !/^\s*>\s?/.test(lines[i]) &&
+             !/^```/.test(lines[i]) && !/^\s*(---|\*\*\*|___)\s*$/.test(lines[i])) {
+        buf.push(lines[i]); i++;
+      }
+      html.push(`<p>${inline(buf.join(" "))}</p>`);
+    }
+
+    closeLists();
+    return html.join("\n");
+  }
+
+  // ---------- Toast ----------
+
+  function showToast(message, duration = 2600) {
+    clearTimeout(state.toastTimer);
+    el.toast.textContent = message;
+    el.toast.hidden = false;
+    state.toastTimer = setTimeout(() => { el.toast.hidden = true; }, duration);
+  }
+
+  // ---------- Sidebar resize & collapse ----------
+  // Purely a UI preference, so it's kept in localStorage rather than
+  // alongside the folder handle in IndexedDB.
+
+  const SIDEBAR_WIDTH_KEY = "ftnMDReader:sidebarWidth";
+  const SIDEBAR_HIDDEN_KEY = "ftnMDReader:sidebarHidden";
+
+  function restoreSidebarPrefs() {
+    try {
+      const savedWidth = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      if (savedWidth) el.sidebar.style.width = savedWidth;
+
+      const savedHidden = localStorage.getItem(SIDEBAR_HIDDEN_KEY);
+      if (savedHidden === "1") el.workspace.classList.add("sidebar-hidden");
+    } catch {
+      // localStorage unavailable (e.g. private browsing) — fall back to defaults
+    }
+  }
+
+  function initSidebarResizer() {
+    let dragging = false;
+
+    el.sidebarResizer.addEventListener("mousedown", (e) => {
+      dragging = true;
+      el.sidebarResizer.classList.add("active");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const rect = el.workspace.getBoundingClientRect();
+      const min = 160;
+      const max = Math.round(rect.width * 0.7);
+      const width = Math.min(max, Math.max(min, e.clientX - rect.left));
+      el.sidebar.style.width = width + "px";
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      el.sidebarResizer.classList.remove("active");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try { localStorage.setItem(SIDEBAR_WIDTH_KEY, el.sidebar.style.width); } catch {}
+    });
+  }
+
+  function toggleSidebar() {
+    el.workspace.classList.toggle("sidebar-hidden");
+    try {
+      localStorage.setItem(
+        SIDEBAR_HIDDEN_KEY,
+        el.workspace.classList.contains("sidebar-hidden") ? "1" : "0"
+      );
+    } catch {}
+  }
+
+  // ---------- Help / About modal ----------
+
+  function openHelpModal() {
+    el.helpDialog.showModal();
+  }
+
+  // ---------- Dark mode ----------
+  // The actual class is applied synchronously in <head> (see the inline
+  // script in index.html) to avoid a flash of the wrong theme before
+  // this script even loads. This just keeps the toggle button's icon in
+  // sync and persists future changes.
+
+  const THEME_KEY = "ftnMDReader:theme";
+
+  function applyThemeIcon() {
+    const isDark = document.documentElement.classList.contains("dark-mode");
+    el.themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
+    el.themeToggleBtn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+  }
+
+  function toggleTheme() {
+    const isDark = document.documentElement.classList.toggle("dark-mode");
+    try { localStorage.setItem(THEME_KEY, isDark ? "dark" : "light"); } catch {}
+    applyThemeIcon();
+  }
+
+  // ---------- Zen mode ----------
+  // Distraction-free writing: hides every piece of chrome except the
+  // editor/preview itself (see the .zen-mode CSS rules). There's nothing
+  // to focus on without a file open, so entering is a no-op then.
+
+  function toggleZenMode() {
+    if (!state.zenMode && !state.currentPath) {
+      showToast("Open a file first.");
+      return;
+    }
+    state.zenMode = !state.zenMode;
+    el.app.classList.toggle("zen-mode", state.zenMode);
+    el.zenExitBtn.hidden = !state.zenMode;
+    if (state.zenMode) el.editor.focus();
+  }
+
+  // ---------- Footer folder path ----------
+  // Browsers deliberately don't expose the real OS filesystem path for a
+  // folder opened via the File System Access API (that would leak local
+  // disk layout to the page) — only the folder's own name is available.
+  // This shows that name, plus the relative path to the open file (built
+  // from our own path bookkeeping) when one is open, which is the closest
+  // honest equivalent to "the current path".
+
+  function updateFooterFolderPath() {
+    if (!state.dirHandle) {
+      el.footerFolder.hidden = true;
+      return;
+    }
+    const rootName = state.dirHandle.name;
+    const fullPath = state.currentPath ? `${rootName}/${state.currentPath}` : rootName;
+    el.footerFolderPath.textContent = fullPath;
+    el.footerFolderPath.title = fullPath;
+    el.footerFolder.hidden = false;
+  }
+
+  async function copyFolderPath() {
+    const text = el.footerFolderPath.textContent;
+    if (!text) return;
+
+    try {
+      await copyText(text);
+      el.footerCopyPathBtn.textContent = "✓";
+      el.footerCopyPathBtn.classList.add("copied");
+      showToast("Copied to clipboard");
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't copy the path.");
+    }
+
+    setTimeout(() => {
+      el.footerCopyPathBtn.textContent = "⧉";
+      el.footerCopyPathBtn.classList.remove("copied");
+    }, 1400);
+  }
+
+  // ---------- Split view resize ----------
+  // The editor pane gets an explicit flex-basis (as a percentage of the
+  // doc body's width) so it scales sensibly if the window is resized too.
+
+  const SPLIT_WIDTH_KEY = "ftnMDReader:splitEditorWidth";
+
+  function restoreSplitPref() {
+    try {
+      const saved = parseFloat(localStorage.getItem(SPLIT_WIDTH_KEY));
+      if (saved && saved > 0) state.splitPct = saved;
+    } catch {
+      // localStorage unavailable — fall back to the default 50/50 split
+    }
+  }
+
+  function initDocResizer() {
+    let dragging = false;
+
+    el.docResizer.addEventListener("mousedown", (e) => {
+      if (state.view !== "split") return;
+      dragging = true;
+      el.docResizer.classList.add("active");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const rect = el.docBody.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      state.splitPct = Math.min(80, Math.max(20, pct));
+      el.editorWrap.style.flex = `0 0 ${state.splitPct}%`;
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      el.docResizer.classList.remove("active");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try { localStorage.setItem(SPLIT_WIDTH_KEY, String(state.splitPct)); } catch {}
+    });
+  }
+
+  // ---------- Wiring ----------
+
+  el.openFolderBtn.addEventListener("click", openFolder);
+  el.emptyOpenBtn.addEventListener("click", openFolder);
+  el.emptyNewFileBtn.addEventListener("click", () => openNewFileDialog());
+  el.emptyHelpBtn.addEventListener("click", openHelpModal);
+  el.newFileBtn.addEventListener("click", () => openNewFileDialog());
+  el.cancelNewFile.addEventListener("click", () => el.newFileDialog.close());
+
+  el.newFileForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    el.newFileDialog.close();
+    createNewFile(el.newFileName.value);
+  });
+
+  el.newFolderBtn.addEventListener("click", () => openNewFolderDialog());
+  el.cancelNewFolder.addEventListener("click", () => el.newFolderDialog.close());
+
+  el.newFolderForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    el.newFolderDialog.close();
+    createNewFolder(el.newFolderName.value);
+  });
+
+  el.cancelMoveFile.addEventListener("click", () => el.moveFileDialog.close());
+  el.moveFileForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    el.moveFileDialog.close();
+    if (state.moveTargetFile) moveFile(state.moveTargetFile, el.moveFileTarget.value);
+    state.moveTargetFile = null;
+  });
+
+  el.cancelRename.addEventListener("click", () => el.renameDialog.close());
+  el.renameForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    el.renameDialog.close();
+    if (state.renameTarget) renameEntry(state.renameTarget.path, state.renameTarget.kind, el.renameInput.value);
+    state.renameTarget = null;
+  });
+
+  el.closeDocBtn.addEventListener("click", closeDocument);
+  el.zenToggleBtn.addEventListener("click", toggleZenMode);
+  el.zenExitBtn.addEventListener("click", toggleZenMode);
+
+  el.renameCurrentBtn.addEventListener("click", () => {
+    if (state.currentPath) openRenameDialog(state.currentPath, "file");
+  });
+
+  el.revealBtn.addEventListener("click", () => {
+    if (state.currentPath) revealInSidebar(state.currentPath);
+  });
+
+  el.exportPdfBtn.addEventListener("click", exportToPdf);
+  el.exportHtmlBtn.addEventListener("click", exportToHtml);
+
+  el.deleteCurrentBtn.addEventListener("click", () => {
+    if (state.currentPath) deleteFile(state.currentPath);
+  });
+
+  el.refreshFolderBtn.addEventListener("click", refreshFolderManual);
+
+  el.quickOpenBtn.addEventListener("click", openQuickOpen);
+
+  el.quickOpenInput.addEventListener("input", () => {
+    renderQuickOpenResults(el.quickOpenInput.value);
+  });
+
+  el.quickOpenInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); moveQuickOpenSelection(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); moveQuickOpenSelection(-1); }
+    else if (e.key === "Enter") { e.preventDefault(); confirmQuickOpenSelection(); }
+  });
+
+  // Dropping a file on the "Files" header moves it back to the root.
+  el.sidebarHead.addEventListener("dragover", (e) => {
+    if (!state.draggingPath) return;
+    e.preventDefault();
+    el.sidebarHead.classList.add("drop-target");
+  });
+  el.sidebarHead.addEventListener("dragleave", () => el.sidebarHead.classList.remove("drop-target"));
+  el.sidebarHead.addEventListener("drop", (e) => {
+    e.preventDefault();
+    el.sidebarHead.classList.remove("drop-target");
+    const draggedPath = e.dataTransfer.getData("text/plain") || state.draggingPath;
+    if (draggedPath) moveFile(draggedPath, "");
+  });
+
+  el.saveBtn.addEventListener("click", saveCurrentFile);
+
+  el.searchInput.addEventListener("input", () => {
+    state.query = el.searchInput.value;
+    handleSearchInput();
+  });
+
+  el.searchClear.addEventListener("click", () => {
+    el.searchInput.value = "";
+    state.query = "";
+    state.contentMatches.clear();
+    el.searchClear.hidden = true;
+    renderFileList();
+    el.searchInput.focus();
+  });
+
+  el.searchContentToggle.addEventListener("change", () => {
+    state.searchContent = el.searchContentToggle.checked;
+    if (state.searchContent && state.query.trim().length >= 2) {
+      runContentSearch(state.query.trim());
+    } else {
+      state.contentMatches.clear();
+      renderFileList();
+    }
+  });
+
+  el.toggleSidebarBtn.addEventListener("click", toggleSidebar);
+  el.themeToggleBtn.addEventListener("click", toggleTheme);
+  el.helpBtn.addEventListener("click", openHelpModal);
+  el.helpCloseBtn.addEventListener("click", () => el.helpDialog.close());
+  el.helpOpenFolderBtn.addEventListener("click", () => {
+    el.helpDialog.close();
+    openFolder();
+  });
+  el.footerCopyPathBtn.addEventListener("click", copyFolderPath);
+  initSidebarResizer();
+  restoreSidebarPrefs();
+  initDocResizer();
+  restoreSplitPref();
+
+  el.editor.addEventListener("input", () => {
+    updateDirtyState();
+    if (state.view !== "edit") renderPreview();
+  });
+
+  el.tabEdit.addEventListener("click", () => setView("edit"));
+  el.tabPreview.addEventListener("click", () => setView("preview"));
+  el.tabSplit.addEventListener("click", () => setView("split"));
+
+  el.toolbar.addEventListener("click", (e) => {
+    const btn = e.target.closest(".toolbar-btn");
+    if (btn) applyFormatting(btn.dataset.action);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    const cmdOrCtrl = e.metaKey || e.ctrlKey;
+    if (cmdOrCtrl && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      saveCurrentFile();
+    }
+    if (cmdOrCtrl && e.shiftKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      toggleZenMode();
+    }
+    if (cmdOrCtrl && !e.shiftKey && e.key.toLowerCase() === "f" &&
+        !el.workspace.classList.contains("sidebar-hidden") && !state.zenMode) {
+      e.preventDefault();
+      el.searchInput.focus();
+      el.searchInput.select();
+    }
+    if (e.key === "Escape" && state.zenMode && !document.querySelector("dialog[open]")) {
+      toggleZenMode();
+    }
+    if (cmdOrCtrl && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      openQuickOpen();
+    }
+  });
+
+  window.addEventListener("beforeunload", (e) => {
+    if (state.dirty) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  setView("edit");
+  el.appVersion.textContent = `v${APP_VERSION}`;
+  applyThemeIcon();
+
+  if ("showDirectoryPicker" in window) {
+    restoreLastFolder();
+  }
+})();

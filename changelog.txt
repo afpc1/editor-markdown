@@ -1,6 +1,20 @@
 ftnMDReader — Changelog
 =======================
 
+v1.0.9
+------
+- CodeMirror no longer loads from a CDN — it's now bundled locally into
+  app.js at build time (via esbuild), so editing files works fully
+  offline. The editor's actual behavior is unchanged; this is purely
+  about not depending on external network access at runtime anymore.
+  (Preview's code-block syntax colors still use highlight.js from a
+  CDN — a separate, smaller dependency, untouched by this change.)
+- The project now has a proper source/build split for its JavaScript,
+  matching the existing style.scss -> style.css pattern: app.src.js is
+  the editable source, app.js is the generated bundle the browser
+  loads. See BUILDING.md for how to rebuild after editing either one.
+
+
 v1.0.8
 ------
 - Moved line numbers to the left (their usual position) — v1.0.7 put
